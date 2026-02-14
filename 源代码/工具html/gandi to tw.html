@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>02engine extension gandi to turbowarp</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <!-- 配置Tailwind自定义颜色和字体 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#00BAAD',
+                        'primary-dark': '#008C84',
+                        'primary-light': '#33C9BF',
+                        secondary: '#2D3748',
+                        neutral: '#F7FAFC',
+                    },
+                    fontFamily: {
+                        sans: ['Roboto', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .md2-card {
+                @apply bg-white rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg;
+            }
+            .md2-button {
+                @apply bg-primary text-white font-medium py-2 px-4 rounded-md transition-all duration-200 hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 active:scale-95;
+            }
+            .md2-button-outline {
+                @apply border-2 border-primary text-primary font-medium py-2 px-4 rounded-md transition-all duration-200 hover:bg-primary hover:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 active:scale-95;
+            }
+            .md2-input {
+                @apply w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200;
+            }
+            .md2-label {
+                @apply block text-sm font-medium text-gray-700 mb-1;
+            }
+            .md2-textarea {
+                @apply w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200 resize-none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <header class="bg-primary text-white shadow-md">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-code-fork text-2xl" aria-hidden="true"></i>
+                <h1 class="text-xl md:text-2xl font-bold">02engine extension converter</h1>
+            </div>
+            <div class="hidden md:flex items-center space-x-4">
+                <span class="text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">Gandi → TurboWarp</span>
+            </div>
+        </div>
+    </header>
+    <main class="container mx-auto px-4 py-8">
+        <div class="md2-card mb-8 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">Gandi 扩展转 TurboWarp 扩展</h2>
+            <p class="text-gray-600">这个工具可以帮助您将Gandi扩展转换为TurboWarp兼容的扩展格式。您可以上传JS文件或直接输入代码，转换后可以下载生成的扩展文件。</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="md2-card p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <i class="fa fa-input-text mr-2 text-primary" aria-hidden="true"></i>
+                    输入 Gandi 扩展代码
+                </h3>
+                
+                <div class="mb-6">
+                    <label class="md2-label" for="file-upload">上传 Gandi 扩展 JS 文件</label>
+                    <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                        <div class="space-y-1 text-center">
+                            <i class="fa fa-cloud-upload text-3xl text-gray-400 mb-2" aria-hidden="true"></i>
+                            <div class="flex text-sm text-gray-600">
+                                <label for="file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-primary hover:text-primary-dark">
+                                    <span>选择文件</span>
+                                    <input id="file-upload" name="file-upload" type="file" accept=".js" class="sr-only">
+                                </label>
+                                <p class="pl-1">或拖放文件到此处</p>
+                            </div>
+                            <p class="text-xs text-gray-500" id="file-name">未选择文件</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="md2-label" for="input-code">或直接输入 Gandi 扩展代码</label>
+                        <button id="clear-input" class="text-sm text-gray-500 hover:text-primary transition-colors">
+                            <i class="fa fa-eraser mr-1" aria-hidden="true"></i>清空
+                        </button>
+                    </div>
+                    <textarea id="input-code" class="md2-textarea h-64" placeholder="粘贴Gandi扩展的JavaScript代码到这里..."></textarea>
+                </div>
+                
+                <button id="convert-btn" class="md2-button w-full flex justify-center items-center">
+                    <i class="fa fa-exchange mr-2" aria-hidden="true"></i>
+                    转换为 TurboWarp 扩展
+                </button>
+            </div>
+            
+            <div class="md2-card p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <i class="fa fa-output mr-2 text-primary" aria-hidden="true"></i>
+                    转换后的 TurboWarp 扩展代码
+                </h3>
+                
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="md2-label" for="output-code">转换结果</label>
+                        <div class="flex space-x-2">
+                            <button id="copy-output" class="text-sm text-gray-500 hover:text-primary transition-colors">
+                                <i class="fa fa-copy mr-1" aria-hidden="true"></i>复制
+                            </button>
+                            <button id="clear-output" class="text-sm text-gray-500 hover:text-primary transition-colors">
+                                <i class="fa fa-eraser mr-1" aria-hidden="true"></i>清空
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="output-code" class="md2-textarea h-64 bg-gray-50" placeholder="转换后的代码将显示在这里..." readonly></textarea>
+                </div>
+                
+                <div id="status-message" class="mb-6 p-3 rounded-md hidden">
+                    <p class="text-sm" id="status-text"></p>
+                </div>
+                
+                <button id="download-btn" class="md2-button-outline w-full flex justify-center items-center" disabled>
+                    <i class="fa fa-download mr-2" aria-hidden="true"></i>
+                    下载扩展文件
+                </button>
+            </div>
+        </div>
+        
+        <div class="md2-card mt-8 p-6 bg-primary bg-opacity-5 border-l-4 border-primary">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2 flex items-center">
+                <i class="fa fa-info-circle mr-2 text-primary" aria-hidden="true"></i>
+                使用说明
+            </h3>
+            <ul class="list-disc pl-5 text-gray-600 space-y-2">
+                <li>上传Gandi扩展的JS文件，或直接在文本框中粘贴代码</li>
+                <li>点击"转换为TurboWarp扩展"按钮进行转换</li>
+                <li>转换成功后，可以复制代码或下载生成的JS文件</li>
+                <li>生成的文件可直接在TurboWarp编辑器中使用</li>
+            </ul>
+        </div>
+    </main>
+
+
+
+    <script>
+        const fileUpload = document.getElementById('file-upload');
+        const fileName = document.getElementById('file-name');
+        const inputCode = document.getElementById('input-code');
+        const outputCode = document.getElementById('output-code');
+        const convertBtn = document.getElementById('convert-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const copyOutputBtn = document.getElementById('copy-output');
+        const clearInputBtn = document.getElementById('clear-input');
+        const clearOutputBtn = document.getElementById('clear-output');
+        const statusMessage = document.getElementById('status-message');
+        const statusText = document.getElementById('status-text');
+        
+
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileName.textContent = file.name;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    inputCode.value = event.target.result;
+                };
+                reader.readAsText(file);
+            } else {
+                fileName.textContent = '未选择文件';
+            }
+        });
+        
+
+        const dropArea = fileUpload.closest('.border-dashed');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.classList.add('border-primary');
+            dropArea.classList.add('bg-primary-light');
+            dropArea.classList.add('bg-opacity-10');
+        }
+        
+        function unhighlight() {
+            dropArea.classList.remove('border-primary');
+            dropArea.classList.remove('bg-primary-light');
+            dropArea.classList.remove('bg-opacity-10');
+        }
+        
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
+            
+            if (file && file.type === 'application/javascript') {
+                fileName.textContent = file.name;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    inputCode.value = event.target.result;
+                };
+                reader.readAsText(file);
+            } else {
+                showStatus('请上传JavaScript文件(.js)', 'error');
+            }
+        }
+        
+        // 转换功能
+        convertBtn.addEventListener('click', () => {
+            const gandiCode = inputCode.value.trim();
+            
+            if (!gandiCode) {
+                showStatus('请输入或上传Gandi扩展代码', 'error');
+                return;
+            }
+            
+            try {
+                const base64Code = btoa(unescape(encodeURIComponent(gandiCode)));
+                const turbowarpCode = `;(function (window, Scratch) {const ccwBase64 ='${base64Code}';function _0x2a45(){const _0x553272=['code','2720417ibFEdk','windowInstance','398IrDjnu','2393252LRCCez','168210NypsrD','get','getFormatMessage','construct','addEventListener','translate','---','02ccwconverter','var\\x20Scratch\\x20=\\x20document.getElementById(\\x2702ccwconverter\\x27).scratchInstance;(function\\x20(window)\\x20{','substring','script','has','Extension','Scratch','18wErIqY','text/javascript','})(document.getElementById(\\x2702ccwconverter\\x27).windowInstance)','object','charCodeAt','startsWith','src','11pIUgMK','type','createObjectURL','head','load','16YDJUOV','call','BlockType','LABEL','extensions','blocks','3442YSxmVA','runtime','setup','decode','set','string','getInfo','tempExt','194196VOPzWz','utf-8','function','375190YyyEwf','88060GtoYRV','appendChild','length'];_0x2a45=function(){return _0x553272;};return _0x2a45();}const _0x522028=_0x43fa;(function(_0x1aaee7,_0x554e03){const _0x59a03c=_0x43fa,_0x5657d1=_0x1aaee7();while(!![]){try{const _0x1c2c90=-parseInt(_0x59a03c(0xfa))/0x1*(-parseInt(_0x59a03c(0xd8))/0x2)+-parseInt(_0x59a03c(0x102))/0x3+-parseInt(_0x59a03c(0xd9))/0x4+parseInt(_0x59a03c(0xd2))/0x5*(-parseInt(_0x59a03c(0xe8))/0x6)+parseInt(_0x59a03c(0xd6))/0x7+-parseInt(_0x59a03c(0xf4))/0x8*(-parseInt(_0x59a03c(0xda))/0x9)+-parseInt(_0x59a03c(0x105))/0xa*(parseInt(_0x59a03c(0xef))/0xb);if(_0x1c2c90===_0x554e03)break;else _0x5657d1['push'](_0x5657d1['shift']());}catch(_0x435961){_0x5657d1['push'](_0x5657d1['shift']());}}}(_0x2a45,0x574c1));function _0x43fa(_0x18c96a,_0x173405){const _0x2a45bf=_0x2a45();return _0x43fa=function(_0x43fa6f,_0x5d9085){_0x43fa6f=_0x43fa6f-0xd2;let _0x14e6fc=_0x2a45bf[_0x43fa6f];return _0x14e6fc;},_0x43fa(_0x18c96a,_0x173405);}const ccwCode=new TextDecoder(_0x522028(0x103))[_0x522028(0xfd)](Uint8Array['from'](atob(ccwBase64),_0x439450=>_0x439450[_0x522028(0xec)](0x0))),fn=URL[_0x522028(0xf1)](new Blob([_0x522028(0xe2)+ccwCode+_0x522028(0xea)],{'type':_0x522028(0xe9)})),windowProxy=new Proxy(window,{'get'(_0x4be8a8,_0x5276c9){const _0x4ee44a=_0x522028;if(_0x5276c9===_0x4ee44a(0xe7))return Scratch;const _0x543b7b=Reflect[_0x4ee44a(0xdb)](_0x4be8a8,_0x5276c9);if(typeof _0x543b7b===_0x4ee44a(0x104))return new Proxy(_0x543b7b,{'apply'(_0x306628,_0x4af54d,_0x131654){return Reflect['apply'](_0x306628,_0x4af54d===windowProxy?window:_0x4af54d,_0x131654);}});return _0x543b7b;},'set'(_0x12fd3b,_0x11ab68,_0x50023a){const _0x2be56a=_0x522028;if(_0x11ab68===_0x2be56a(0x101)){if(typeof _0x50023a===_0x2be56a(0xeb)&&_0x50023a!==null&&typeof _0x50023a['Extension']==='function'){const _0x17c6ea=new Proxy(Scratch['vm'][_0x2be56a(0xfb)],{'get'(_0x543162,_0xa8fd3c){if(_0xa8fd3c==='getFormatMessage')return(..._0xfe1e38)=>{const _0x3a0599=_0x43fa;return Scratch['translate'][_0x3a0599(0xfc)](..._0xfe1e38),Scratch[_0x3a0599(0xdf)];};return Reflect['get'](_0x543162,_0xa8fd3c);},'has'(_0x388356,_0x5c0581){const _0x878bdf=_0x2be56a;if(_0x5c0581===_0x878bdf(0xdc))return!![];return Reflect[_0x878bdf(0xe5)](_0x388356,_0x5c0581);}}),_0x4d448a=Reflect[_0x2be56a(0xdd)](_0x50023a[_0x2be56a(0xe6)],[_0x17c6ea]),_0x3d9cec=_0x4d448a[_0x2be56a(0x100)];_0x4d448a[_0x2be56a(0x100)]=function(){const _0x41e4ed=_0x2be56a,_0x10fd80=_0x3d9cec[_0x41e4ed(0xf5)](this),_0x3e3ebb=_0x10fd80?.[_0x41e4ed(0xf9)];if(typeof _0x3e3ebb==='object'&&_0x3e3ebb!==null)for(const [_0x32820c,_0x1d4be9]of Object['entries'](_0x3e3ebb)){typeof _0x1d4be9===_0x41e4ed(0xff)&&_0x1d4be9[_0x41e4ed(0xed)](_0x41e4ed(0xe0))&&_0x1d4be9[_0x41e4ed(0xd4)]!==0x3&&(_0x3e3ebb[_0x32820c]={'blockType':Scratch[_0x41e4ed(0xf6)][_0x41e4ed(0xf7)],'text':_0x1d4be9[_0x41e4ed(0xe3)](0x3)});}return _0x10fd80;},Scratch[_0x2be56a(0xf8)]['register'](_0x4d448a);}return!![];}return Reflect[_0x2be56a(0xfe)](_0x12fd3b,_0x11ab68,_0x50023a);},'has'(_0x4d6232,_0x1659ac){const _0x22706a=_0x522028;if(_0x1659ac===_0x22706a(0xe7))return!![];if(_0x1659ac==='tempExt')return![];return Reflect[_0x22706a(0xe5)](_0x4d6232,_0x1659ac);}}),script=document['createElement'](_0x522028(0xe4)),remove=()=>{script['remove']();};script[_0x522028(0xee)]=fn,script['scratchInstance']=Scratch,script[_0x522028(0xd7)]=windowProxy,script[_0x522028(0xd5)]=ccwCode,script[_0x522028(0xf0)]=_0x522028(0xe9),script['id']=_0x522028(0xe1),script[_0x522028(0xde)](_0x522028(0xf3),remove),script['addEventListener']('error',remove),document[_0x522028(0xf2)][_0x522028(0xd3)](script);})(window, Scratch)`;
+                outputCode.value = turbowarpCode;
+                showStatus('转换成功！', 'success');
+                downloadBtn.disabled = false;
+                downloadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                downloadBtn.classList.add('hover:bg-primary', 'hover:text-white');
+            } catch (error) {
+                showStatus(`转换失败: ${error.message}`, 'error');
+                downloadBtn.disabled = true;
+            }
+        });
+        downloadBtn.addEventListener('click', () => {
+            const code = outputCode.value;
+            if (!code) return;
+            
+            const blob = new Blob([code], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'gandi-to-turbowarp-extension.js';
+            document.body.appendChild(a);
+            a.click();
+            
+
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 0);
+            
+            showStatus('文件已下载', 'success');
+        });
+        
+
+        copyOutputBtn.addEventListener('click', () => {
+            if (!outputCode.value) {
+                showStatus('没有可复制的内容', 'error');
+                return;
+            }
+            
+            outputCode.select();
+            document.execCommand('copy');
+            showStatus('代码已复制到剪贴板', 'success');
+        });
+        
+
+        clearInputBtn.addEventListener('click', () => {
+            inputCode.value = '';
+            fileUpload.value = '';
+            fileName.textContent = '未选择文件';
+            showStatus('输入已清空', 'info');
+        });
+        
+
+        clearOutputBtn.addEventListener('click', () => {
+            outputCode.value = '';
+            downloadBtn.disabled = true;
+            showStatus('输出已清空', 'info');
+        });
+        
+
+        function showStatus(message, type) {
+            statusText.textContent = message;
+            statusMessage.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-blue-100', 'text-blue-800');
+            
+            switch(type) {
+                case 'success':
+                    statusMessage.classList.add('bg-green-100', 'text-green-800');
+                    break;
+                case 'error':
+                    statusMessage.classList.add('bg-red-100', 'text-red-800');
+                    break;
+                case 'info':
+                    statusMessage.classList.add('bg-blue-100', 'text-blue-800');
+                    break;
+            }
+            
+
+            setTimeout(() => {
+                statusMessage.classList.add('hidden');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
