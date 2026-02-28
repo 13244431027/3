@@ -1,8 +1,7 @@
 plugin.id = "multi-account.switcher.floating";
 plugin.name = "多账号切换器 (悬浮窗)";
-plugin.version = "2.0.0";
+plugin.version = "2.0.1";
 
-// 样式：独立窗口 + 主面板集成按钮
 plugin.style = `
   /* 悬浮窗主体 */
   #ma-floating-window {
@@ -101,6 +100,7 @@ plugin.style = `
     margin-left: 8px;
     background: rgba(100, 200, 100, 0.2) !important;
     border: 1px solid rgba(100, 200, 100, 0.4) !important;
+    padding: 4px 10px !important;
   }
   #ma-main-panel-btn:hover {
     background: rgba(100, 200, 100, 0.3) !important;
@@ -115,7 +115,6 @@ plugin.style = `
   }
 `;
 
-// 存储键名
 const STORAGE_KEY = 'github_panel_multi_account';
 const CURRENT_KEY = 'github_panel_multi_account_current';
 
@@ -129,13 +128,17 @@ plugin.init = ({ core, ui, components, utils, extension }) => {
   plugin._loadAccounts();
   plugin._restoreCurrentAccount();
   plugin._createFloatingWindow();
-  plugin._integrateToMainPanel();
+
+  // 延迟挂载主面板按钮，确保 UI 已渲染
+  setTimeout(() => {
+    plugin._retryIntegrateToMainPanel(3);
+  }, 500);
 };
 
 plugin.onHook = (hookName, data) => {
   if (hookName === 'ui:ready') {
-    // 确保主面板按钮已挂载
-    setTimeout(() => plugin._integrateToMainPanel(), 100);
+    // 备用：hook 触发时再尝试一次
+    setTimeout(() => plugin._retryIntegrateToMainPanel(1), 200);
   }
   if (hookName === 'mode:switch') {
     plugin._updateCurrentIndicator();
@@ -227,7 +230,9 @@ plugin._switchAccount = (id, notify = true) => {
 // ==================== UI 构建 ====================
 
 plugin._createFloatingWindow = () => {
-  // 创建悬浮窗容器
+  // 防止重复创建
+  if (document.getElementById('ma-floating-window')) return;
+
   const win = document.createElement('div');
   win.id = 'ma-floating-window';
   document.body.appendChild(win);
@@ -245,7 +250,7 @@ plugin._createFloatingWindow = () => {
   controls.style.gap = '6px';
   
   const minBtn = plugin._components.createWindowButton('_', { padding: '2px 8px', fontSize: '14px' });
-  minBtn.onclick = () => plugin._toggleWindow();
+  minBtn.onclick = () => plugin._hideWindow();
   
   const closeBtn = plugin._components.createWindowButton('×', { padding: '2px 8px', background: 'rgba(255,80,80,0.4)' });
   closeBtn.onclick = () => plugin._hideWindow();
@@ -306,18 +311,36 @@ plugin._makeDraggable = (handle, win) => {
   window.addEventListener('mouseup', () => drag.on = false);
 };
 
-plugin._integrateToMainPanel = () => {
-  if (!plugin._ui || !plugin._ui.winCtrls) return;
+// 重试机制：最多尝试 n 次挂载主面板按钮
+plugin._retryIntegrateToMainPanel = (retries) => {
+  const tryMount = () => {
+    if (plugin._ui && plugin._ui.winCtrls) {
+      plugin._integrateToMainPanel();
+      return true;
+    }
+    return false;
+  };
 
-  // 查找或创建主面板按钮
-  let btn = document.getElementById('ma-main-panel-btn');
-  if (!btn) {
-    btn = plugin._components.createWindowButton('👤', { padding: '4px 8px' });
-    btn.id = 'ma-main-panel-btn';
-    btn.title = '快速切换账号';
-    btn.onclick = () => plugin._toggleWindow();
-    plugin._ui.winCtrls.appendChild(btn);
+  if (!tryMount() && retries > 0) {
+    setTimeout(() => plugin._retryIntegrateToMainPanel(retries - 1), 300);
   }
+};
+
+plugin._integrateToMainPanel = () => {
+  if (!plugin._ui || !plugin._ui.winCtrls) {
+    console.warn('[MultiAccount] Main panel UI not ready');
+    return;
+  }
+
+  // 防止重复按钮
+  let btn = document.getElementById('ma-main-panel-btn');
+  if (btn) return;
+
+  btn = plugin._components.createWindowButton('👤', { padding: '4px 10px' });
+  btn.id = 'ma-main-panel-btn';
+  btn.title = '快速切换账号';
+  btn.onclick = () => plugin._toggleWindow();
+  plugin._ui.winCtrls.appendChild(btn);
 };
 
 // ==================== 窗口控制 ====================
@@ -395,7 +418,7 @@ plugin._updateCurrentIndicator = () => {
   );
   if (currentItem) currentItem.classList.add('current');
   
-  // 更新主面板按钮状态
+  // 更新主面板按钮提示
   const btn = document.getElementById('ma-main-panel-btn');
   const currentAcc = plugin._data.accounts.find(a => a.id === plugin._data.current);
   if (btn && currentAcc) {
