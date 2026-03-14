@@ -23,19 +23,15 @@ class UltimateBlockCleaner {
 
     _getBlockly() {
         const vm = Scratch.vm;
-        // TurboWarp 桌面/网页不同版本里入口可能不同，这里尽量都找
         return (vm && vm.extensionManager && vm.extensionManager._blockly) ||
             (Scratch && Scratch.gui && Scratch.gui.getBlockly && Scratch.gui.getBlockly()) ||
             null;
     }
 
     _refreshWorkspaceHard() {
-        // 目标：让编辑器从 VM/Blocks 重新同步一次
-        // TurboWarp 不同构建可能没有同名方法，所以这里做多重尝试
         const vm = Scratch.vm;
 
         try {
-            // 尝试触发“工作区已修改”一类的刷新
             if (vm && vm.runtime && typeof vm.runtime.emit === 'function') {
                 vm.runtime.emit('PROJECT_CHANGED');
                 vm.runtime.emit('BLOCKS_CHANGED');
@@ -48,13 +44,11 @@ class UltimateBlockCleaner {
             const workspace = blockly && blockly.workspace;
 
             if (workspace) {
-                // 触发一次 Blockly 自己的 change event，迫使 UI 重算
                 if (blockly.Events && typeof blockly.Events.fire === 'function') {
                     const ev = new blockly.Events.Ui(null, 'refresh', null, null);
                     blockly.Events.fire(ev);
                 }
 
-                // 有些版本需要显式 resize 才会刷新渲染
                 if (typeof workspace.resizeContents === 'function') workspace.resizeContents();
                 if (typeof workspace.render === 'function') workspace.render();
                 if (typeof blockly.svgResize === 'function') blockly.svgResize(workspace);
@@ -62,7 +56,6 @@ class UltimateBlockCleaner {
         } catch (e) {}
 
         try {
-            // 切换一下编辑目标再切回来，也能强制 GUI 重建 blocks（很多版本有效）
             const editingTarget = vm.runtime.getEditingTarget && vm.runtime.getEditingTarget();
             if (editingTarget) {
                 const original = editingTarget.id;
@@ -81,10 +74,23 @@ class UltimateBlockCleaner {
         } catch (e) {}
     }
 
+    _isBlockStillValid(target, blockId) {
+        // ✅ 新增：验证块在 VM 中确实存在
+        if (!target || !target.blocks) return false;
+        const block = target.blocks.getBlock(blockId);
+        return !!block;
+    }
+
     _disposeBlockInWorkspace(targetId, blockId) {
         const vm = Scratch.vm;
+        
+        // ✅ 新增：在删除前再次验证块的有效性
+        const target = vm.runtime.getTargetById(targetId);
+        if (!this._isBlockStillValid(target, blockId)) {
+            console.warn('块已不存在或已删除:', blockId);
+            return false;
+        }
 
-        // 确保 workspace 指向当前 target，否则 getBlockById 会拿不到
         try {
             if (typeof vm.setEditingTarget === 'function') {
                 vm.setEditingTarget(targetId);
@@ -100,19 +106,38 @@ class UltimateBlockCleaner {
         const wsBlock = workspace.getBlockById(blockId);
         if (!wsBlock) return false;
 
-        // 关键点：用 Blockly 正规删除流程（会触发事件、同步 VM、刷新 UI）
-        // dispose(true) 会连同子块一起删除
         try {
             if (blockly.Events && typeof blockly.Events.setGroup === 'function') {
                 blockly.Events.setGroup('UltimateBlockCleaner');
             }
             wsBlock.dispose(true);
+            return true;
         } finally {
             if (blockly.Events && typeof blockly.Events.setGroup === 'function') {
                 blockly.Events.setGroup(false);
             }
         }
-        return true;
+    }
+
+    _findNextHatlessBlock(target, runtime) {
+        // ✅ 新增：每次调用都重新获取最新的脚本列表（避免列表过期）
+        const topLevelBlockIds = target.blocks.getScripts();
+        
+        for (const blockId of topLevelBlockIds) {
+            const block = target.blocks.getBlock(blockId);
+            if (!block) continue;
+
+            const isTopLevel = !block.parent;
+            if (!isTopLevel) continue;
+
+            const isHat = runtime.getIsHat(block.opcode);
+            const isProcedureDefinition = block.opcode === 'procedures_definition';
+
+            if (!isHat && !isProcedureDefinition) {
+                return blockId;
+            }
+        }
+        return null;
     }
 
     removeHatlessBlocks() {
@@ -124,60 +149,56 @@ class UltimateBlockCleaner {
         const runtime = vm.runtime;
         const targets = runtime.targets;
         let totalRemovedCount = 0;
+        let errorOccurred = false;
 
         for (const target of targets) {
             if (!target || !target.blocks) continue;
 
-            while (true) {
-                const topLevelBlockIds = target.blocks.getScripts();
-                let blockToDeleteId = null;
-
-                for (const blockId of topLevelBlockIds) {
-                    const block = target.blocks.getBlock(blockId);
-                    if (!block) continue;
-
-                    const isTopLevel = !block.parent;
-                    if (!isTopLevel) continue;
-
-                    const isHat = runtime.getIsHat(block.opcode);
-                    const isProcedureDefinition = block.opcode === 'procedures_definition';
-
-                    if (!isHat && !isProcedureDefinition) {
-                        blockToDeleteId = blockId;
-                        break;
-                    }
+            let blockToDeleteId;
+            // ✅ 改进：使用 do-while 避免频繁重新赋值 null
+            while ((blockToDeleteId = this._findNextHatlessBlock(target, runtime)) !== null) {
+                // ✅ 新增：二次验证确保块仍然有效
+                if (!this._isBlockStillValid(target, blockToDeleteId)) {
+                    console.warn('块已失效，跳过:', blockToDeleteId);
+                    continue;
                 }
 
-                if (!blockToDeleteId) break;
-
-                // 优先：从 workspace 删除（GUI 会立刻刷新）
-                // 失败再回退：直接删 blocks（可能出现你说的“失效但不刷新”）
                 let deleted = false;
 
                 try {
                     deleted = this._disposeBlockInWorkspace(target.id, blockToDeleteId);
                 } catch (e) {
+                    console.error('Workspace 删除失败:', blockToDeleteId, e);
                     deleted = false;
                 }
 
+                // ✅ 改进：只在 Workspace 删除失败时才尝试 VM 删除
                 if (!deleted) {
                     try {
-                        target.blocks.deleteBlock(blockToDeleteId);
-                        deleted = true;
+                        // ✅ 新增：再次验证块是否真的存在
+                        if (this._isBlockStillValid(target, blockToDeleteId)) {
+                            target.blocks.deleteBlock(blockToDeleteId);
+                            deleted = true;
+                        }
                     } catch (e) {
-                        console.error('删除失败：', blockToDeleteId, e);
+                        console.error('VM 删除失败:', blockToDeleteId, e);
+                        errorOccurred = true;
                         break;
                     }
                 }
 
-                if (deleted) totalRemovedCount++;
+                if (deleted) {
+                    totalRemovedCount++;
+                } else {
+                    console.warn('块删除返回 false:', blockToDeleteId);
+                }
             }
+
+            if (errorOccurred) break;
         }
 
-        // 强制刷新（解决“积木失效但编辑器不刷新”）
         this._refreshWorkspaceHard();
-
-        alert(`完成！已删除没有帽块的孤立脚本：${totalRemovedCount}`);
+        alert(`完成！已删除没有帽块的孤立脚本：${totalRemovedCount}${errorOccurred ? ' (过程中遇到错误)' : ''}`);
     }
 
     removeEmptyHats() {
@@ -196,6 +217,7 @@ class UltimateBlockCleaner {
             const topLevelBlockIds = target.blocks.getScripts();
             const toDelete = [];
 
+            // ✅ 改进：先收集要删除的块，但要验证其有效性
             for (const blockId of topLevelBlockIds) {
                 const block = target.blocks.getBlock(blockId);
                 if (!block) continue;
@@ -211,21 +233,31 @@ class UltimateBlockCleaner {
                 }
             }
 
+            // ✅ 改进：删除时再次验证每个块
             for (const blockId of toDelete) {
+                // ✅ 新增：验证块仍然有效
+                if (!this._isBlockStillValid(target, blockId)) {
+                    console.warn('块已不存在:', blockId);
+                    continue;
+                }
+
                 let deleted = false;
 
                 try {
                     deleted = this._disposeBlockInWorkspace(target.id, blockId);
                 } catch (e) {
+                    console.error('Workspace 删除失败:', blockId, e);
                     deleted = false;
                 }
 
                 if (!deleted) {
                     try {
-                        target.blocks.deleteBlock(blockId);
-                        deleted = true;
+                        if (this._isBlockStillValid(target, blockId)) {
+                            target.blocks.deleteBlock(blockId);
+                            deleted = true;
+                        }
                     } catch (e) {
-                        console.error('删除失败：', blockId, e);
+                        console.error('VM 删除失败:', blockId, e);
                     }
                 }
 
@@ -233,9 +265,7 @@ class UltimateBlockCleaner {
             }
         }
 
-        // 强制刷新（解决“积木失效但编辑器不刷新”）
         this._refreshWorkspaceHard();
-
         alert(`完成！已删除孤立的帽块：${totalRemovedCount}`);
     }
 }
