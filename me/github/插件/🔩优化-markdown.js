@@ -13,11 +13,11 @@ Markdown 优化解析插件（极速版）
 */
 
 plugin.id = "plugin.markdown.enhanced.fast";
-plugin.name = "Markdown 优化解析（极速请求）";
+plugin.name = "Markdown 优化解析";
 plugin.version = "1.3.0";
 plugin.author = "ChatGPT";
 plugin.description = "marked+DOMPurify 先行（最快可用），hljs/KaTeX/Mermaid 按需/空闲加载；预连接+并行+本地缓存，显著减少请求阻塞。";
-plugin.tags = ["markdown", "preview", "fast", "lazyload", "cache", "marked", "dompurify", "hljs", "katex", "mermaid"];
+plugin.tags = ["markdown", "marked",];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
