@@ -1,5 +1,5 @@
 
-
+#此介绍按V3来编制，以过时，但兼容V4
 ## 1. 插件系统概览
 
 该扩展内置一个“插件管理器”`PluginManager`，用于在运行时加载外部 JS 代码作为插件。插件通过 `new Function('context', ...)` 动态执行，因此：
@@ -36,6 +36,7 @@ const plugin = {
 - `plugin.id`：**必填**（否则报错：`Plugin must have an ID`）
 - `plugin.name`：插件名
 - `plugin.version`：版本号
+-
 - `plugin.init(context)`：加载完成后调用
 - `plugin.onHook(hookName, data)`：事件回调
 - `plugin.style`：字符串形式 CSS，将被注入 `<style id="plugin-style-${id}">`
