@@ -3,7 +3,7 @@ plugin.name = "多账号切换器 (悬浮窗)";
 plugin.version = "2.0.2";
 plugin.author = "yuan";
 plugin.description = "在 GitHub 面板 Pro+ 内提供多 Token 账号切换，悬浮窗管理账号，支持关闭面板后再次打开自动重挂载按钮。";
-plugin.tags = ["token", "account", "switcher", "ui"];
+plugin.tags = ["功能","管理"];
 
 // 兼容：如果运行环境没有 Utils/LoadingManager（极少数），不报错
 const _MA_safeItemStyle = () => {
