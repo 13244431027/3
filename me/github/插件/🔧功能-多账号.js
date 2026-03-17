@@ -1,10 +1,30 @@
-// 多账号切换器 (悬浮窗) - 修复版
-// ID: multi-account.switcher.floating
-// 修复：关闭面板后无法再次打开的问题
-
 plugin.id = "multi-account.switcher.floating";
 plugin.name = "多账号切换器 (悬浮窗)";
 plugin.version = "2.0.2";
+plugin.author = "yuan";
+plugin.description = "在 GitHub 面板 Pro+ 内提供多 Token 账号切换，悬浮窗管理账号，支持关闭面板后再次打开自动重挂载按钮。";
+plugin.tags = ["token", "account", "switcher", "ui"];
+
+// 兼容：如果运行环境没有 Utils/LoadingManager（极少数），不报错
+const _MA_safeItemStyle = () => {
+  try {
+    if (typeof Utils !== "undefined" && Utils.itemStyle) return Utils.itemStyle();
+  } catch {}
+  return {
+    padding: "10px",
+    borderBottom: "1px solid rgba(255,255,255,0.1)",
+    marginBottom: "8px",
+    background: "rgba(255,255,255,0.02)",
+    borderRadius: "6px",
+    position: "relative"
+  };
+};
+
+const _MA_setStatus = (msg) => {
+  try {
+    if (typeof LoadingManager !== "undefined" && LoadingManager.setMessage) LoadingManager.setMessage(msg);
+  } catch {}
+};
 
 plugin.style = `
   /* 悬浮窗主体 */
@@ -53,20 +73,16 @@ plugin.style = `
   
   /* 账号列表项 */
   .ma-account-item {
+    ${JSON.stringify(_MA_safeItemStyle()).replace(/"/g, "").replace(/,/g, ";")}
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 8px 10px !important;
     margin-bottom: 6px !important;
-    background: rgba(255,255,255,0.08) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
-    border-radius: 6px !important;
-    color: #fff !important;
   }
   .ma-account-item.current {
-    background: rgba(100, 200, 100, 0.2) !important;
-    border-left: 3px solid #4caf50 !important;
-    border-color: #4caf50 !important;
+    background: rgba(100, 200, 100, 0.15) !important;
+    border-left: 3px solid #4caf50;
   }
   
   .ma-account-info {
@@ -81,7 +97,6 @@ plugin.style = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #fff !important;
   }
   
   .ma-account-token-preview {
@@ -102,7 +117,6 @@ plugin.style = `
     width: 100%;
     margin-top: 10px;
     background: #28a745 !important;
-    color: #fff !important;
   }
   
   /* 主面板标题栏集成按钮 */
@@ -122,83 +136,46 @@ plugin.style = `
     opacity: 0.5;
     padding: 20px;
     font-size: 12px;
-    color: #aaa;
   }
 `;
 
-const STORAGE_KEY = 'github_panel_multi_account';
-const CURRENT_KEY = 'github_panel_multi_account_current';
-
-// ==================== 全局状态（保证关闭后可恢复） ====================
-
-plugin._data = { accounts: [], current: null };
-plugin._core = null;
-plugin._ui = null;
-plugin._components = null;
-plugin._utils = null;
-plugin._extension = null;
-plugin._window = null;
-plugin._listContainer = null;
-plugin._mainPanelBtn = null;
-plugin._initialized = false;
-
-// ==================== 初始化 ====================
+const STORAGE_KEY = "github_panel_multi_account";
+const CURRENT_KEY = "github_panel_multi_account_current";
 
 plugin.init = (context) => {
-  const { core, ui, components, utils, extension } = context;
-  
+  const { core, ui, components, utils, extension } = context || {};
   plugin._core = core;
   plugin._ui = ui;
   plugin._components = components;
   plugin._utils = utils;
   plugin._extension = extension;
 
-  // 只初始化一次
-  if (plugin._initialized) {
-    console.log('[MultiAccount] Already initialized, skipping...');
-    return;
-  }
-
   plugin._loadAccounts();
   plugin._restoreCurrentAccount();
   plugin._createFloatingWindow();
-  plugin._initialized = true;
 
-  // 延迟挂载主面板按钮
+  // 初次挂载（延迟确保 UI 渲染）
   setTimeout(() => {
-    plugin._retryIntegrateToMainPanel(5);
-  }, 500);
-
-  console.log('[MultiAccount] Initialized');
+    plugin._retryIntegrateToMainPanel(6);
+  }, 300);
 };
 
 plugin.onHook = (hookName, data) => {
-  if (hookName === 'ui:ready') {
-    // UI 重建时，确保浮窗仍存在；如果丢失则重建
-    setTimeout(() => {
-      if (!document.getElementById('ma-floating-window')) {
-        plugin._createFloatingWindow();
-      }
-      plugin._retryIntegrateToMainPanel(3);
-    }, 200);
+  // 关键修复：面板关闭/重开时，ui 会重建，必须刷新引用
+  if (hookName === "ui:ready" || hookName === "ui:show") {
+    if (data) {
+      plugin._ui = data;
+    }
+    setTimeout(() => plugin._retryIntegrateToMainPanel(6), 150);
   }
 
-  if (hookName === 'ui:show') {
-    // 面板重新显示时，重新挂载主按钮（可能被 UI 重建）
-    setTimeout(() => {
-      if (!document.getElementById('ma-main-panel-btn')) {
-        plugin._retryIntegrateToMainPanel(3);
-      }
-    }, 100);
+  if (hookName === "ui:hide") {
+    // 主面板关闭时不销毁悬浮窗，只是隐藏（避免“打不开”错觉）
+    plugin._hideWindow();
   }
 
-  if (hookName === 'mode:switch') {
+  if (hookName === "mode:switch") {
     plugin._updateCurrentIndicator();
-  }
-
-  if (hookName === 'ui:hide') {
-    // 面板隐藏时，隐藏浮窗（可选）
-    // plugin._hideWindow();
   }
 };
 
@@ -209,7 +186,7 @@ plugin._loadAccounts = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     plugin._data = raw ? JSON.parse(raw) : { accounts: [], current: null };
   } catch (e) {
-    console.error('[MultiAccount] Load error:', e);
+    console.error("[MultiAccount] Load error:", e);
     plugin._data = { accounts: [], current: null };
   }
 };
@@ -218,28 +195,25 @@ plugin._saveAccounts = () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(plugin._data));
   } catch (e) {
-    console.error('[MultiAccount] Save error:', e);
+    console.error("[MultiAccount] Save error:", e);
   }
 };
 
 plugin._restoreCurrentAccount = () => {
   const currentId = localStorage.getItem(CURRENT_KEY);
-  if (currentId && plugin._core) {
-    const acc = plugin._data.accounts.find(a => a.id === currentId);
-    if (acc) {
-      plugin._core.setToken(acc.token);
-      plugin._data.current = acc.id;
-    }
+  if (currentId) {
+    const acc = plugin._data.accounts.find((a) => a.id === currentId);
+    if (acc) plugin._switchAccount(acc.id, false);
   }
 };
 
 // ==================== 账号操作 ====================
 
 plugin._addAccount = () => {
-  const name = prompt('请输入账号名称（如：工作、个人）');
+  const name = prompt("请输入账号名称（如：工作、个人）");
   if (!name) return;
 
-  const token = prompt('请输入 GitHub Token (ghp_...)\n⚠️ 将以明文存储在浏览器本地');
+  const token = prompt("请输入 GitHub Token (ghp_...)\n⚠️ 将以明文存储在浏览器本地");
   if (!token) return;
 
   const account = {
@@ -251,112 +225,112 @@ plugin._addAccount = () => {
   plugin._data.accounts.push(account);
   plugin._saveAccounts();
   plugin._renderAccountList();
-  LoadingManager.setMessage(`账号已添加: ${account.name}`);
+  _MA_setStatus(`账号已添加: ${account.name}`);
 };
 
 plugin._removeAccount = (id) => {
-  const acc = plugin._data.accounts.find(a => a.id === id);
+  const acc = plugin._data.accounts.find((a) => a.id === id);
   if (!acc) return;
 
   if (!confirm(`确定删除账号 "${acc.name}" 吗？`)) return;
   if (!confirm(`⚠️ 再次确认：将永久删除该账号及 Token`)) return;
 
-  plugin._data.accounts = plugin._data.accounts.filter(a => a.id !== id);
-  
+  plugin._data.accounts = plugin._data.accounts.filter((a) => a.id !== id);
+
   if (plugin._data.current === id) {
     plugin._data.current = null;
     localStorage.removeItem(CURRENT_KEY);
-    if (plugin._core) plugin._core.setToken('');
+    try {
+      plugin._core?.setToken?.("");
+    } catch {}
   }
 
   plugin._saveAccounts();
   plugin._renderAccountList();
-  LoadingManager.setMessage(`账号已删除: ${acc.name}`);
+  _MA_setStatus(`账号已删除: ${acc.name}`);
 };
 
 plugin._switchAccount = (id, notify = true) => {
-  const acc = plugin._data.accounts.find(a => a.id === id);
-  if (!acc || !plugin._core) return;
+  const acc = plugin._data.accounts.find((a) => a.id === id);
+  if (!acc) return;
 
-  plugin._core.setToken(acc.token);
+  try {
+    plugin._core?.setToken?.(acc.token);
+  } catch (e) {
+    console.error("[MultiAccount] setToken failed:", e);
+  }
+
   plugin._data.current = id;
   localStorage.setItem(CURRENT_KEY, id);
   plugin._saveAccounts();
   plugin._updateCurrentIndicator();
 
-  if (notify) LoadingManager.setMessage(`已切换到: ${acc.name}`);
+  if (notify) _MA_setStatus(`已切换到: ${acc.name}`);
 };
 
 // ==================== UI 构建 ====================
 
 plugin._createFloatingWindow = () => {
   // 防止重复创建
-  if (document.getElementById('ma-floating-window')) {
-    console.log('[MultiAccount] Floating window already exists');
+  let win = document.getElementById("ma-floating-window");
+  if (win) {
+    plugin._window = win;
+    plugin._listContainer = document.getElementById("ma-account-list");
     return;
   }
 
-  const win = document.createElement('div');
-  win.id = 'ma-floating-window';
+  win = document.createElement("div");
+  win.id = "ma-floating-window";
   document.body.appendChild(win);
 
   // 标题栏
-  const header = document.createElement('div');
-  header.id = 'ma-floating-header';
-  
-  const title = document.createElement('div');
-  title.id = 'ma-floating-title';
-  title.textContent = '👤 账号切换器';
-  
-  const controls = document.createElement('div');
-  controls.style.display = 'flex';
-  controls.style.gap = '6px';
-  
-  const minBtn = plugin._components.createWindowButton('_', {
-    padding: '2px 8px',
-    fontSize: '14px',
-    margin: '0'
-  });
-  minBtn.onclick = (e) => {
-    e.stopPropagation();
-    plugin._hideWindow();
-  };
-  
-  const closeBtn = plugin._components.createWindowButton('×', {
-    padding: '2px 8px',
-    background: 'rgba(255,80,80,0.4)',
-    margin: '0'
-  });
-  closeBtn.onclick = (e) => {
-    e.stopPropagation();
-    plugin._hideWindow();
-  };
-  
+  const header = document.createElement("div");
+  header.id = "ma-floating-header";
+
+  const title = document.createElement("div");
+  title.id = "ma-floating-title";
+  title.textContent = "👤 账号切换器";
+
+  const controls = document.createElement("div");
+  controls.style.display = "flex";
+  controls.style.gap = "6px";
+
+  const minBtn = plugin._components?.createWindowButton
+    ? plugin._components.createWindowButton("_", { padding: "2px 8px", fontSize: "14px" })
+    : document.createElement("button");
+  minBtn.textContent = minBtn.textContent || "_";
+  minBtn.onclick = () => plugin._hideWindow();
+
+  const closeBtn = plugin._components?.createWindowButton
+    ? plugin._components.createWindowButton("×", { padding: "2px 8px", background: "rgba(255,80,80,0.4)" })
+    : document.createElement("button");
+  closeBtn.textContent = closeBtn.textContent || "×";
+  closeBtn.onclick = () => plugin._hideWindow();
+
   controls.appendChild(minBtn);
   controls.appendChild(closeBtn);
-  
+
   header.appendChild(title);
   header.appendChild(controls);
   win.appendChild(header);
 
   // 内容区
-  const content = document.createElement('div');
-  content.id = 'ma-floating-content';
+  const content = document.createElement("div");
+  content.id = "ma-floating-content";
   win.appendChild(content);
 
   // 添加账号按钮
-  const addBtn = plugin._components.createWindowButton('+ 添加新账号', {
-    background: '#28a745',
-    width: '100%',
-    marginTop: '10px'
-  });
-  addBtn.id = 'ma-add-account-btn';
+  const addBtn = plugin._components?.createWindowButton
+    ? plugin._components.createWindowButton("+ 添加新账号", { background: "#28a745" })
+    : document.createElement("button");
+  addBtn.id = "ma-add-account-btn";
+  addBtn.textContent = addBtn.textContent || "+ 添加新账号";
   addBtn.onclick = () => plugin._addAccount();
   content.appendChild(addBtn);
 
   // 账号列表容器
-  const list = document.createElement('div');
-  list.id = 'ma-account-list';
+  const list = document.createElement("div");
+  list.id = "ma-account-list";
   content.appendChild(list);
 
   // 拖拽功能
@@ -364,15 +338,13 @@ plugin._createFloatingWindow = () => {
 
   plugin._window = win;
   plugin._listContainer = list;
-
-  console.log('[MultiAccount] Floating window created');
 };
 
 plugin._makeDraggable = (handle, win) => {
   let drag = { on: false, x: 0, y: 0, left: 0, top: 0 };
-  
-  handle.addEventListener('mousedown', (e) => {
-    if (e.target.tagName.toLowerCase() === 'button') return;
+
+  handle.addEventListener("mousedown", (e) => {
+    if (e.target && e.target.tagName && e.target.tagName.toLowerCase() === "button") return;
     drag.on = true;
     const rect = win.getBoundingClientRect();
     drag.x = e.clientX;
@@ -380,25 +352,47 @@ plugin._makeDraggable = (handle, win) => {
     drag.left = rect.left;
     drag.top = rect.top;
   });
-  
-  window.addEventListener('mousemove', (e) => {
+
+  window.addEventListener("mousemove", (e) => {
     if (!drag.on || !plugin._window) return;
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
-    win.style.left = (drag.left + dx) + 'px';
-    win.style.top = (drag.top + dy) + 'px';
-    win.style.right = 'auto';
-    win.style.bottom = 'auto';
+    win.style.left = drag.left + dx + "px";
+    win.style.top = drag.top + dy + "px";
+    win.style.right = "auto";
+    win.style.bottom = "auto";
   });
-  
-  window.addEventListener('mouseup', () => drag.on = false);
+
+  window.addEventListener("mouseup", () => (drag.on = false));
+};
+
+// ==================== 主面板按钮挂载（关键修复） ====================
+
+plugin._getMainPanelCtrls = () => {
+  // 1) 最优：扩展显式提供 ui.winCtrls
+  if (plugin._ui && plugin._ui.winCtrls) return plugin._ui.winCtrls;
+
+  // 2) 兼容：你的面板 header 最后一个子元素就是控制按钮容器
+  if (plugin._ui && plugin._ui.header && plugin._ui.header.lastElementChild) return plugin._ui.header.lastElementChild;
+
+  // 3) 再兼容：如果 ui.header 没挂，尝试从 DOM 找（尽量不报错）
+  try {
+    const panel = plugin._ui?.panel;
+    if (panel) {
+      const hdr = panel.querySelector("div");
+      if (hdr && hdr.lastElementChild) return hdr.lastElementChild;
+    }
+  } catch {}
+
+  return null;
 };
 
 // 重试机制：最多尝试 n 次挂载主面板按钮
 plugin._retryIntegrateToMainPanel = (retries) => {
   const tryMount = () => {
-    if (plugin._ui && plugin._ui.winCtrls) {
-      plugin._integrateToMainPanel();
+    const ctrls = plugin._getMainPanelCtrls();
+    if (ctrls) {
+      plugin._integrateToMainPanel(ctrls);
       return true;
     }
     return false;
@@ -409,109 +403,99 @@ plugin._retryIntegrateToMainPanel = (retries) => {
   }
 };
 
-plugin._integrateToMainPanel = () => {
-  if (!plugin._ui || !plugin._ui.winCtrls) {
-    console.warn('[MultiAccount] Main panel UI not ready');
+plugin._integrateToMainPanel = (ctrls) => {
+  if (!ctrls) {
+    console.warn("[MultiAccount] Main panel controls not ready");
     return;
   }
 
-  // 防止重复按钮
-  if (document.getElementById('ma-main-panel-btn')) {
-    return;
+  // 防止重复按钮：如果旧按钮存在但不在当前控制栏里，重挂
+  let btn = document.getElementById("ma-main-panel-btn");
+  if (btn && btn.parentElement !== ctrls) {
+    try { btn.remove(); } catch {}
+    btn = null;
   }
+  if (btn) return;
 
-  const btn = plugin._components.createWindowButton('👤', {
-    padding: '4px 10px',
-    background: 'rgba(100, 200, 100, 0.2)',
-    border: '1px solid rgba(100, 200, 100, 0.4)'
-  });
-  btn.id = 'ma-main-panel-btn';
-  btn.title = '快速切换账号';
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    plugin._toggleWindow();
-  };
-  
-  plugin._ui.winCtrls.appendChild(btn);
-  plugin._mainPanelBtn = btn;
-  
-  console.log('[MultiAccount] Main panel button integrated');
+  btn = plugin._components?.createWindowButton
+    ? plugin._components.createWindowButton("👤", { padding: "4px 10px" })
+    : document.createElement("button");
+  btn.id = "ma-main-panel-btn";
+  btn.textContent = btn.textContent || "👤";
+  btn.title = "快速切换账号";
+  btn.onclick = () => plugin._toggleWindow();
+
+  ctrls.appendChild(btn);
+
+  // 立刻刷新提示/高亮
+  plugin._updateCurrentIndicator();
 };
 
 // ==================== 窗口控制 ====================
 
 plugin._toggleWindow = () => {
-  // 确保浮窗存在（如果被销毁则重建）
-  if (!plugin._window || !document.body.contains(plugin._window)) {
-    plugin._createFloatingWindow();
-  }
-  
+  if (!plugin._window) plugin._createFloatingWindow();
   if (!plugin._window) return;
-  
-  const isVisible = plugin._window.style.display !== 'none';
-  plugin._window.style.display = isVisible ? 'none' : 'flex';
-  
-  if (!isVisible) {
-    plugin._renderAccountList();
-  }
+
+  const isVisible = plugin._window.style.display !== "none";
+  plugin._window.style.display = isVisible ? "none" : "flex";
+  if (!isVisible) plugin._renderAccountList();
 };
 
 plugin._hideWindow = () => {
-  if (plugin._window) {
-    plugin._window.style.display = 'none';
-  }
+  if (plugin._window) plugin._window.style.display = "none";
 };
 
 // ==================== 列表渲染 ====================
 
 plugin._renderAccountList = () => {
+  if (!plugin._listContainer) {
+    plugin._listContainer = document.getElementById("ma-account-list");
+  }
   if (!plugin._listContainer) return;
-  
+
   const list = plugin._listContainer;
-  list.innerHTML = '';
-  
-  if (plugin._data.accounts.length === 0) {
+  list.innerHTML = "";
+
+  if (!plugin._data || !plugin._data.accounts || plugin._data.accounts.length === 0) {
     list.innerHTML = '<div class="ma-empty-tip">暂无账号<br>点击上方按钮添加</div>';
     return;
   }
 
   plugin._data.accounts.forEach((acc) => {
-    const item = document.createElement('div');
-    item.className = 'ma-account-item';
-    if (acc.id === plugin._data.current) {
-      item.classList.add('current');
-    }
+    const item = document.createElement("div");
+    item.className = "ma-account-item";
+    if (acc.id === plugin._data.current) item.classList.add("current");
 
-    const info = document.createElement('div');
-    info.className = 'ma-account-info';
-    
-    const name = document.createElement('div');
-    name.className = 'ma-account-name';
+    const info = document.createElement("div");
+    info.className = "ma-account-info";
+
+    const name = document.createElement("div");
+    name.className = "ma-account-name";
     name.textContent = acc.name;
-    
-    const tokenPreview = document.createElement('div');
-    tokenPreview.className = 'ma-account-token-preview';
-    tokenPreview.textContent = acc.token.substring(0, 12) + '...' + acc.token.slice(-4);
-    
+
+    const tokenPreview = document.createElement("div");
+    tokenPreview.className = "ma-account-token-preview";
+    tokenPreview.textContent = acc.token.substring(0, 12) + "..." + acc.token.slice(-4);
+
     info.appendChild(name);
     info.appendChild(tokenPreview);
 
-    const actions = document.createElement('div');
-    actions.className = 'ma-account-actions';
-    
-    const switchBtn = plugin._components.createWindowButton('切换', {
-      padding: '4px 8px',
-      fontSize: '11px'
-    });
+    const actions = document.createElement("div");
+    actions.className = "ma-account-actions";
+
+    const switchBtn = plugin._components?.createWindowButton
+      ? plugin._components.createWindowButton("切换")
+      : document.createElement("button");
+    switchBtn.textContent = switchBtn.textContent || "切换";
     switchBtn.onclick = () => plugin._switchAccount(acc.id);
-    
-    const delBtn = plugin._components.createWindowButton('删除', {
-      background: 'rgba(255,80,80,0.2)',
-      padding: '4px 8px',
-      fontSize: '11px'
-    });
+
+    const delBtn = plugin._components?.createWindowButton
+      ? plugin._components.createWindowButton("删除", { background: "rgba(255,80,80,0.2)" })
+      : document.createElement("button");
+    delBtn.textContent = delBtn.textContent || "删除";
     delBtn.onclick = () => plugin._removeAccount(acc.id);
-    
+
     actions.appendChild(switchBtn);
     actions.appendChild(delBtn);
 
@@ -519,26 +503,28 @@ plugin._renderAccountList = () => {
     item.appendChild(actions);
     list.appendChild(item);
   });
+
+  plugin._updateCurrentIndicator();
 };
 
 plugin._updateCurrentIndicator = () => {
-  // 更新列表高亮
-  const items = document.querySelectorAll('#ma-account-list .ma-account-item');
-  items.forEach(item => item.classList.remove('current'));
-  
-  const currentIdx = plugin._data.accounts.findIndex(a => a.id === plugin._data.current);
-  if (currentIdx >= 0 && items[currentIdx]) {
-    items[currentIdx].classList.add('current');
+  // 更新列表高亮（用 DOM 查询，不依赖旧引用）
+  const list = document.getElementById("ma-account-list");
+  if (list) {
+    const items = list.querySelectorAll(".ma-account-item");
+    items.forEach((it) => it.classList.remove("current"));
+
+    // 重新渲染时 item 顺序与 accounts 相同
+    const currentIndex = plugin._data?.accounts?.findIndex((a) => a.id === plugin._data.current);
+    if (currentIndex >= 0 && items[currentIndex]) items[currentIndex].classList.add("current");
   }
-  
+
   // 更新主面板按钮提示
-  const btn = document.getElementById('ma-main-panel-btn');
-  const currentAcc = plugin._data.accounts.find(a => a.id === plugin._data.current);
+  const btn = document.getElementById("ma-main-panel-btn");
+  const currentAcc = plugin._data?.accounts?.find((a) => a.id === plugin._data.current);
   if (btn && currentAcc) {
     btn.title = `当前账号: ${currentAcc.name}`;
-    btn.style.background = 'rgba(100, 200, 100, 0.3) !important';
   } else if (btn) {
-    btn.title = '快速切换账号 (未登录)';
-    btn.style.background = 'rgba(100, 200, 100, 0.2) !important';
+    btn.title = "快速切换账号";
   }
 };
