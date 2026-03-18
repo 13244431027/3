@@ -2,7 +2,7 @@ plugin.id = "plugin.markdown.enhanced.fast";
 plugin.name = "Markdown 优化解析（极速请求）";
 plugin.version = "1.3.3";
 plugin.author = "ChatGPT";
-plugin.description = "marked+DOMPurify 先行（最快可用），hljs/KaTeX/Mermaid 按需/空闲加载；预连接+并行+本地缓存，显著减少请求阻塞。接管 AI 输出为 Markdown 预览；并修复 .md / .markdown 文件预览解析（不再只限 README.md）。";
+plugin.description = " .md / .markdown 文件预览。";
 plugin.tags = ["markdown优化", "推荐", "marked",  "ai", "md", "markdown"];
 
 plugin.init = (ctx) => {
