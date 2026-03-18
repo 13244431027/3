@@ -1,9 +1,9 @@
 plugin.id = "plugin.markdown.enhanced.fast";
 plugin.name = "Markdown 优化解析（极速请求）";
-plugin.version = "1.3.2";
+plugin.version = "1.3.3";
 plugin.author = "ChatGPT";
-plugin.description = "markdown预览，并可接管 AI 输出";
-plugin.tags = ["markdown", "marked"];
+plugin.description = "marked+DOMPurify 先行（最快可用），hljs/KaTeX/Mermaid 按需/空闲加载；预连接+并行+本地缓存，显著减少请求阻塞。接管 AI 输出为 Markdown 预览；并修复 .md / .markdown 文件预览解析（不再只限 README.md）。";
+plugin.tags = ["markdown优化", "推荐", "marked",  "ai", "md", "markdown"];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
@@ -15,9 +15,13 @@ plugin.init = (ctx) => {
     failReason: "",
     oldParseMarkdown: null,
 
-    // 新增：AI 输出接管
+    // 接管 AI 输出
     oldRenderAIOutput: null,
     aiRenderHookInstalled: false,
+
+    // 修复：.md / .markdown 文件预览解析（接管 openFile）
+    oldOpenFile: null,
+    openFileHookInstalled: false,
 
     cdn: {
       ghMarkdownCss: "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.2.0/github-markdown.min.css",
@@ -81,7 +85,9 @@ plugin._ensureInjectedButton = () => {
     btn.onclick = async () => {
       if (!plugin._state.installed) {
         await plugin._install(false);
-        alert(plugin._state.ok ? "Markdown 极速解析已启用（按需加载/缓存）。\nAI 输出 Markdown 预览已接管（若扩展支持）。" : `启用失败（已回退）：${plugin._state.failReason || "未知原因"}`);
+        alert(plugin._state.ok
+          ? "Markdown 极速解析已启用（按需加载/缓存）。\nAI 输出 Markdown 预览已接管（若扩展支持）。\n.md/.markdown 文件预览已修复。"
+          : `启用失败（已回退）：${plugin._state.failReason || "未知原因"}`);
         return;
       }
       const act = prompt("已启用：\n1) 关闭接管\n2) 清空本地库缓存\n3) 立即预加载可选库\n其它取消", "1");
@@ -117,8 +123,11 @@ plugin._install = async (silent) => {
     utils.parseMarkdown = (text, owner, repo, branch) =>
       plugin._enhancedParseMarkdown(text, owner, repo, branch);
 
-    // 新增：接管 AI 输出（把 AI 输出当 Markdown 渲染）
+    // 接管 AI 输出（Markdown 渲染）
     plugin._installAIOutputHook();
+
+    // 修复：.md / .markdown 文件预览解析（不再只限 README.md）
+    plugin._installOpenFileHook();
 
     plugin._state.installed = true;
     plugin._state.ok = true;
@@ -126,13 +135,15 @@ plugin._install = async (silent) => {
   } catch (e) {
     plugin._state.ok = false;
     plugin._state.failReason = e?.message || String(e);
+
     try {
       const { utils } = plugin._ctx || {};
       if (utils && plugin._state.oldParseMarkdown) utils.parseMarkdown = plugin._state.oldParseMarkdown;
     } catch {}
-    try {
-      plugin._uninstallAIOutputHook();
-    } catch {}
+
+    try { plugin._uninstallAIOutputHook(); } catch {}
+    try { plugin._uninstallOpenFileHook(); } catch {}
+
     if (!silent) console.error("[MDX Fast] install failed:", e);
   } finally {
     plugin._state.installing = false;
@@ -144,52 +155,38 @@ plugin._uninstall = () => {
   if (utils && plugin._state.oldParseMarkdown) utils.parseMarkdown = plugin._state.oldParseMarkdown;
 
   plugin._uninstallAIOutputHook();
+  plugin._uninstallOpenFileHook();
 
   plugin._state.installed = false;
   plugin._state.ok = false;
 };
 
 plugin._installAIOutputHook = () => {
-  // 兼容：没有 extension / 没有 _renderAIOutput 不报错
   const ext = plugin._ctx?.extension;
   if (!ext) return;
   if (plugin._state.aiRenderHookInstalled) return;
   if (typeof ext._renderAIOutput !== "function") return;
 
-  // 只保存一次
-  if (!plugin._state.oldRenderAIOutput) {
-    plugin._state.oldRenderAIOutput = ext._renderAIOutput;
-  }
+  if (!plugin._state.oldRenderAIOutput) plugin._state.oldRenderAIOutput = ext._renderAIOutput;
 
-  // 绑定：用原逻辑先输出（可选），再把输出替换为 Markdown 预览
   ext._renderAIOutput = function () {
-    // 1) 先调用原来的（保持兼容原本的状态/滚动/错误追加逻辑）
-    try {
-      plugin._state.oldRenderAIOutput && plugin._state.oldRenderAIOutput.call(this);
-    } catch {
-      // 忽略：原函数失败时，插件继续做自己的渲染
-    }
+    // 先调用原来的（保持原逻辑）
+    try { plugin._state.oldRenderAIOutput && plugin._state.oldRenderAIOutput.call(this); } catch {}
 
-    // 2) 插件渲染（如果找不到 ui.aiOutputPre 直接返回）
     const ui = this?.ui;
     const core = this?.core;
     if (!ui || !ui.aiOutputPre || !core || !core.aiManager) return;
 
     const pre = ui.aiOutputPre;
 
-    // 读取原缓冲区
-    const err = core.aiManager.streamError ? `\n\n[Error]\n${core.aiManager.streamError}\n` : '';
-    const tail = core.aiManager.isStreaming ? '\n\n(Streaming...)' : '';
-    const raw = (core.aiManager.streamBuffer || '') + err + tail;
+    const err = core.aiManager.streamError ? `\n\n[Error]\n${core.aiManager.streamError}\n` : "";
+    const tail = core.aiManager.isStreaming ? "\n\n(Streaming...)" : "";
+    const raw = (core.aiManager.streamBuffer || "") + err + tail;
 
-    // 3) 用 utils.parseMarkdown 渲染（被本插件接管后会走 marked+DOMPurify）
     try {
       const utils = plugin._ctx?.utils;
       if (utils && typeof utils.parseMarkdown === "function") {
         const html = utils.parseMarkdown(raw, core.currentOwner, core.currentRepo, core.currentBranch);
-
-        // 注意：aiOutputPre 可能是 <pre>，这里允许 innerHTML（因为 parseMarkdown 已做 sanitize）
-        // 若你扩展里 aiOutputPre 不是 pre 也没问题
         pre.style.whiteSpace = "normal";
         pre.innerHTML = html || "";
       } else {
@@ -201,10 +198,8 @@ plugin._installAIOutputHook = () => {
       pre.textContent = raw;
     }
 
-    // 4) 高亮/KaTeX/Mermaid 等增强（如果有）
     try { plugin._scheduleEnhance(); } catch {}
 
-    // 5) 滚动到底（如果原函数已滚动，也不影响）
     try {
       const wrap = pre.parentElement;
       if (wrap) wrap.scrollTop = wrap.scrollHeight;
@@ -222,8 +217,82 @@ plugin._uninstallAIOutputHook = () => {
   if (plugin._state.oldRenderAIOutput && typeof plugin._state.oldRenderAIOutput === "function") {
     ext._renderAIOutput = plugin._state.oldRenderAIOutput;
   }
-
   plugin._state.aiRenderHookInstalled = false;
+};
+
+plugin._isMarkdownFile = (fileLike) => {
+  const name = String(fileLike?.name || "").toLowerCase();
+  if (!name) return false;
+  if (name === "readme") return true;
+  if (name.endsWith(".md")) return true;
+  if (name.endsWith(".markdown")) return true;
+  return false;
+};
+
+plugin._installOpenFileHook = () => {
+  const ext = plugin._ctx?.extension;
+  if (!ext) return;
+  if (plugin._state.openFileHookInstalled) return;
+  if (typeof ext.openFile !== "function") return;
+
+  if (!plugin._state.oldOpenFile) plugin._state.oldOpenFile = ext.openFile;
+
+  ext.openFile = async function (file) {
+    // 先走原逻辑（让扩展创建 UI/加载内容/挂载 mdToggleBtn 等）
+    await plugin._state.oldOpenFile.call(this, file);
+
+    // 只对 .md / .markdown / README 类文件做“预览修复”
+    if (!plugin._isMarkdownFile(file)) return;
+
+    // 兼容：扩展必须存在 fileViewRefs
+    const refs = this?.ui?.fileViewRefs;
+    const core = this?.core;
+    if (!refs || !core) return;
+
+    // 兼容：必须有 mdView + pre（你之前修复预览时加的）
+    const mdView = refs.mdView;
+    const pre = refs.pre;
+    if (!mdView || !pre) return;
+
+    // 兼容：必须能取到编辑区文本（openFile 里会给 textarea.value = text）
+    const textarea = refs.textarea || this?.ui?.editorTextarea;
+    const text = String(textarea?.value || pre?.textContent || "");
+
+    // 强制把预览内容用 utils.parseMarkdown 渲染（本插件接管后更强）
+    try {
+      const utils = plugin._ctx?.utils;
+      if (utils && typeof utils.parseMarkdown === "function") {
+        mdView.innerHTML = utils.parseMarkdown(text, core.currentOwner, core.currentRepo, core.currentBranch);
+      } else {
+        // 没有 parseMarkdown 时，退化为文本
+        mdView.textContent = text;
+      }
+    } catch {
+      mdView.textContent = text;
+    }
+
+    // 默认显示预览（保持你“修复预览”的行为）
+    try {
+      core.isMarkdownPreview = true;
+      pre.style.display = "none";
+      mdView.style.display = "block";
+    } catch {}
+
+    try { plugin._scheduleEnhance(); } catch {}
+  };
+
+  plugin._state.openFileHookInstalled = true;
+};
+
+plugin._uninstallOpenFileHook = () => {
+  const ext = plugin._ctx?.extension;
+  if (!ext) return;
+  if (!plugin._state.openFileHookInstalled) return;
+
+  if (plugin._state.oldOpenFile && typeof plugin._state.oldOpenFile === "function") {
+    ext.openFile = plugin._state.oldOpenFile;
+  }
+  plugin._state.openFileHookInstalled = false;
 };
 
 plugin._preconnect = () => {
