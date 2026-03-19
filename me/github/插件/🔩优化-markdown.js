@@ -28,7 +28,7 @@ plugin.init = (ctx) => {
       hlCss: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css",
       katexCss: "https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css",
 
-      marked: "https://cdn.jsdelivr.net/npm/marked/marked.min.js",
+      marked: "https://raw.githubusercontent.com/13244431027yuan/-/refs/heads/main/markdown/marked.min.js",
       dompurify: "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.1/purify.min.js",
 
       highlight: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js",
