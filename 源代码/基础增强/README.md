@@ -1,0 +1,8 @@
+https://github.com/Nitro-Bolt/extensions/
+https://github.com/ShredMod/extensions-old
+https://github.com/AstraEditor/extensions/tree/master/extensions
+https://github.com/Mistium/extensions.mistium/tree/main/files
+https://codeberg.org/ampmod/extensions/src/branch/develop/extensions
+https://github.com/TutelMod/TutelMod-ExtensionsGallery/tree/main/static/extensions
+https://github.com/PenguinMod/PenguinMod-ExtensionsGallery/tree/main/static/extensions
+https://github.com/Dinosaurmod/extensions/tree/main/src/extensions
