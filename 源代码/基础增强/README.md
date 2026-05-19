@@ -6,3 +6,4 @@ https://codeberg.org/ampmod/extensions/src/branch/develop/extensions
 https://github.com/TutelMod/TutelMod-ExtensionsGallery/tree/main/static/extensions
 https://github.com/PenguinMod/PenguinMod-ExtensionsGallery/tree/main/static/extensions
 https://github.com/Dinosaurmod/extensions/tree/main/src/extensions
+https://github.com/surv-is-a-dev/gallery/tree/main/extensions/0znzw
