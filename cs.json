@@ -1,5 +1,0 @@
-{
-  "\\[红色文字\\]": "<span style=\"color:red\">红色文字</span>",
-  "\\[按钮:(.*?)\\]": "<button onclick=\"alert('$1')\">$1</button>",
-  "<!-- 注释 -->": ""
-}
