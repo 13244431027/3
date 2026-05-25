@@ -9,4 +9,3 @@ https://github.com/Dinosaurmod/extensions/tree/main/src/extensions
 https://github.com/surv-is-a-dev/gallery/tree/main/extensions/0znzw
 https://github.com/sans-2233/wb_s_simple3D
 https://github.com/iamVovaLU/TurbowarpExtensionCollection/
-https://github.com/iamVovaLU/TurbowarpExtensionCollection/
