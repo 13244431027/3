@@ -1,0 +1,13 @@
+https://github.com/Nitro-Bolt/extensions/
+https://github.com/ShredMod/extensions-old
+https://github.com/AstraEditor/extensions/tree/master/extensions
+https://github.com/Mistium/extensions.mistium/tree/main/files
+https://codeberg.org/ampmod/extensions/src/branch/develop/extensions
+https://github.com/TutelMod/TutelMod-ExtensionsGallery/tree/main/static/extensions
+https://github.com/PenguinMod/PenguinMod-ExtensionsGallery/tree/main/static/extensions
+https://github.com/Dinosaurmod/extensions/tree/main/src/extensions
+https://github.com/surv-is-a-dev/gallery/tree/main/extensions/0znzw
+https://github.com/sans-2233/wb_s_simple3D
+https://github.com/iamVovaLU/TurbowarpExtensionCollection/
+
+这里是一些其他人的扩展
