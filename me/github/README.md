@@ -1,5 +1,7 @@
 这个是我做的github面板扩展
-大部分是AI所编
+
+[插件合并工具](https://13244431027.github.io/3/me/github)
+有AI助力
 **所需**
 1.github代币令牌(cookies存储)
 2.硅基流动令牌(可选)
