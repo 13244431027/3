@@ -7,5 +7,5 @@
 2.硅基流动令牌(可选)   
 **对于版本**   
 V1,V2为初版,V3功能最全   
-**推荐**:V4删去大部分功能,改为插件加载(**危险**)   
+**推荐**:[V](https://raw.githubusercontent.com/13244431027/3/refs/heads/main/me/github/GIThubV4.js)[4](https://github.com/13244431027/3/blob/main/me/github/GIThubV4.js)  
 V5删去大部分功能优化API系统   
