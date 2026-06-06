@@ -1,16 +1,16 @@
-// ==TurboWarp==
+// ==02engine==
 // @name WitCatMarkDown
 // @version 1.2.0
 // @description 更优雅的文本框 / Make your text box more colorful 
 // @homepage https://www.ccw.site/student/6173f57f48cf8f4796fc860e
 // @author 白猫 @ CCW
-// ==/TurboWarp==
+// ==/02engine==
 
 (function(Scratch) {
   'use strict';
 
   /* eslint-disable */
-  // ==================== Markdown 解析器部分（增强版） ====================
+  // ==================== Markdown 解析器部分 ====================
   let markdownExpose = {};
 
   (function () {
@@ -169,7 +169,6 @@
           return [header];
         },
 
-        // ====== 新增：围栏代码块 ======
         fencedCode: function fencedCode(block, next) {
           var m = block.match(/^(`{3,}|~{3,})[ \t]*(\S+)?[ \t]*\n([\s\S]*?)\n[ \t]*\1[ \t]*(?:\n|$)/);
           if (!m) return undefined;
@@ -185,7 +184,6 @@
           return [["fenced_code", attrs, code]];
         },
 
-        // ====== 原有：缩进代码块 ======
         code: function code(block, next) {
           var ret = [],
             re = /^(?: {0,3}\t| {4})(.*)\n?/;
@@ -394,8 +392,6 @@
             return ret;
           };
         })(),
-
-        // ====== 新增：块级 HTML 原始标签 ======
         htmlBlock: function htmlBlock(block, next) {
           var blockTags = /^(address|article|aside|blockquote|details|dialog|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hgroup|hr|li|main|nav|ol|p|pre|section|table|ul|canvas|video|audio|iframe|script|style|noscript)[\s\/>]/i;
           if (!/^\s*</.test(block.valueOf())) return undefined;
@@ -461,7 +457,6 @@
           return [];
         },
 
-        // ====== 新增：表格（支持合并） ======
         table: function table(block, next) {
           var bv = block.valueOf();
           var lines = bv.split(/\n/);
@@ -501,7 +496,6 @@
             consumedLen += lines[i].length + 1;
           }
 
-          // 构建网格
           var grid = [];
           grid.push(header.map(function (c) { return { text: c, colspan: 1, rowspan: 1, skip: false, header: true }; }));
           for (i = 0; i < bodyRows.length; i++) {
@@ -518,7 +512,6 @@
             }));
           }
 
-          // 处理合并
           for (i = 1; i < grid.length; i++) {
             for (var j = 0; j < grid[i].length; j++) {
               var cell = grid[i][j];
@@ -544,7 +537,6 @@
             }
           }
 
-          // 构建 JsonML
           var tbl = ["table", { class: "WitCatMarkDownTable" }];
           var thead = ["thead", ["tr"]];
           for (j = 0; j < grid[0].length; j++) {
@@ -582,7 +574,7 @@
           return [tbl];
         },
 
-        // ====== 新增：定义列表 ======
+
         definitionList: function definitionList(block, next) {
           var lines = block.valueOf().split(/\n/);
           if (lines.length < 2) return undefined;
@@ -753,7 +745,7 @@
             return [m[0].length, ["link", { href: m[1] }, m[1].substr("mailto:".length)]];
           } else return [m[0].length, ["link", { href: m[1] }, m[1]]];
         }
-        // 内联 HTML 标签（含自闭合）
+
         m = text.match(/^<\/?([a-zA-Z][a-zA-Z0-9]*)(\s[^<>]*)?\/?>/);
         if (m) {
           return [m[0].length, ["html_inline", m[0]]];
@@ -769,7 +761,6 @@
         }
       },
 
-      // ====== 新增：删除线 ~~text~~ ======
       "~~": function strikethrough(text) {
         var m = text.match(/^~~([\s\S]+?)~~/);
         if (!m) return [1, "~"];
@@ -831,7 +822,6 @@
 
     Markdown.buildInlinePatterns = function (d) {
       var patterns = [];
-      // 优先匹配较长的模式：按长度降序稳定排序
       var keys = [];
       for (var i in d) {
         if (i.match(/^__.*__$/)) continue;
@@ -948,7 +938,6 @@
       if (typeof jsonml === "string") {
         return escapeHTML(jsonml);
       }
-      // 原始 HTML 透传
       if (jsonml[0] === "__html__") {
         return String(jsonml[1] || "");
       }
@@ -1675,7 +1664,6 @@
       this.touchEvent = touchEvent;
       this.resize = null;
       
-      // 新增：存储动态解析规则
       this.dynamicRules = [];
       
       this._initEventListeners();
