@@ -2,8 +2,9 @@
 // @name WitCatMarkDown
 // @version 1.2.0
 // @description 更优雅的文本框 / Make your text box more colorful 
+// @author 白猫 @ CCW 
 // @homepage https://www.ccw.site/student/6173f57f48cf8f4796fc860e
-// @author 白猫 @ CCW
+// @author yuan @ CCW 
 // ==/02engine==
 
 (function(Scratch) {
