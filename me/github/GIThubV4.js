@@ -103,7 +103,7 @@ class Utils {
       let html = '<table style="border-collapse:collapse;width:100%;margin:10px 0;border:1px solid #555;">';
       html += '<thead><tr style="background:rgba(255,255,255,0.1)">';
       headers.forEach(h => html += `<th style="border:1px solid #555;padding:6px;">${h}</th>`);
-      html += `</table></thead><tbody>`;
+      html += `</td></thead><tbody>`;
       rows.forEach(row => {
         html += '<tr>';
         row.forEach((cell, i) => {
@@ -1184,6 +1184,8 @@ class GitHubPanelExtension {
     this.virtualScrollers = new Map();
     this.pluginManager = new PluginManager(this);
     this.core.pluginManager = this.pluginManager;
+    // 自动加载补丁插件（非阻塞）
+    this._autoLoadPatchPlugin().catch(e => console.error('自动加载补丁插件失败:', e));
   }
 
   getInfo() {
@@ -1262,6 +1264,55 @@ class GitHubPanelExtension {
 
   setAIProvider(args) {
     this.core.setAIProvider(args.PROVIDER);
+  }
+
+  // ==================== 补丁插件自动加载 ====================
+  async _autoLoadPatchPlugin() {
+    // 防止重复加载
+    if (this._patchLoaded) return;
+    this._patchLoaded = true;
+
+    const PATCH_URL = 'https://raw.githubusercontent.com/13244431027/3/refs/heads/main/me/github/%E6%8F%92%E4%BB%B6/V4%E8%A1%A5%E4%B8%81.js';
+
+    try {
+      // 1. 提示用户是否加载补丁插件
+      const userConfirmed = confirm(
+        '检测到可用补丁插件 (V4补丁)\n\n' +
+        '该插件用于修复已知问题或增强功能。\n' +
+        '加载插件存在安全风险，请确保来源可信。\n\n' +
+        '是否确定加载？'
+      );
+      if (!userConfirmed) return;
+
+      // 2. 获取插件代码
+      LoadingManager.setMessage('正在获取补丁插件...');
+      const response = await fetch(PATCH_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const code = await response.text();
+
+      // 3. 提取插件 ID（用于卸载旧版本）
+      let pluginId = null;
+      const idMatch = code.match(/plugin\.id\s*=\s*["']([^"']+)["']/);
+      if (idMatch) pluginId = idMatch[1];
+      else console.warn('无法从补丁代码中提取 plugin.id，将跳过卸载步骤');
+
+      // 4. 如果已存在同 ID 插件，先卸载
+      if (pluginId && this.pluginManager.plugins.has(pluginId)) {
+        console.log(`卸载旧版补丁插件: ${pluginId}`);
+        this.pluginManager.unloadPlugin(pluginId);
+        // 等待一小段时间确保卸载完成（样式移除等）
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      // 5. 加载新插件（复用插件管理器的加载逻辑，会弹出安全警告）
+      LoadingManager.setMessage('正在加载补丁插件...');
+      await this.pluginManager.loadPlugin(code, null, true);
+      LoadingManager.setMessage('补丁插件加载成功');
+      console.log('补丁插件已自动加载');
+    } catch (error) {
+      console.error('自动加载补丁插件失败:', error);
+      LoadingManager.setError(`补丁插件加载失败: ${error.message}`);
+    }
   }
 
   // ==================== UI创建 ====================
