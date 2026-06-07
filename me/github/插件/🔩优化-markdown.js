@@ -15,7 +15,7 @@ plugin.name = "Markdown 优化解析（极速请求）";
 plugin.version = "1.3.6";
 plugin.author = "ChatGPT";
 plugin.description = ".md / .markdown / README 预览优化，支持 Markdown 与 HTML 图片/链接自动补全。";
-plugin.tags = ["markdown优化", "推荐", "marked", "ai", "md", "markdown", "图片路径", "链接补全", "html-img"];
+plugin.tags = ["markdown优化", "推荐"];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
