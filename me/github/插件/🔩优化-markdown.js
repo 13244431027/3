@@ -1,9 +1,21 @@
+// ========== 插件：Markdown 优化解析（极速请求）==========
+// 功能：
+// 1. Markdown 使用 marked + DOMPurify 渲染
+// 2. Markdown 图片相对路径自动补全 raw.githubusercontent.com
+// 3. Markdown 普通链接自动补全 github.com/.../blob/...
+// 4. HTML 图片标签 <img src="assets/a.png"> 自动补全 raw 链接
+// 5. HTML 跳转 <a href="docs/a.md"> 自动补全 blob 链接
+// 6. 文件夹 README 自动预览修复
+// 7. 表格纯灰色，无白色/斑马纹
+// 8. AI 输出 Markdown 预览
+// 9. 支持 highlight.js / KaTeX / Mermaid 按需加载
+
 plugin.id = "plugin.markdown.enhanced.fast";
 plugin.name = "Markdown 优化解析（极速请求）";
-plugin.version = "1.3.3";
+plugin.version = "1.3.6";
 plugin.author = "ChatGPT";
-plugin.description = " .md / .markdown 文件预览。";
-plugin.tags = ["markdown优化", "推荐", "marked",  "ai", "md", "markdown"];
+plugin.description = ".md / .markdown / README 预览优化，支持 Markdown 与 HTML 图片/链接自动补全。";
+plugin.tags = ["markdown优化", "推荐", "marked", "ai", "md", "markdown", "图片路径", "链接补全", "html-img"];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
@@ -13,13 +25,12 @@ plugin.init = (ctx) => {
     installing: false,
     ok: false,
     failReason: "",
+
     oldParseMarkdown: null,
 
-    // 接管 AI 输出
     oldRenderAIOutput: null,
     aiRenderHookInstalled: false,
 
-    // 修复：.md / .markdown 文件预览解析（接管 openFile）
     oldOpenFile: null,
     openFileHookInstalled: false,
 
@@ -39,7 +50,7 @@ plugin.init = (ctx) => {
 
     cache: {
       enabled: true,
-      schema: "mdx-libcache-v2",
+      schema: "mdx-libcache-v3",
       ttlMs: 30 * 24 * 3600 * 1000,
       maxCharsPerLib: 900_000
     },
@@ -52,7 +63,6 @@ plugin.init = (ctx) => {
 
     observer: null,
     enhanceScheduled: false,
-    themeCssInjected: false,
     preconnectDone: false
   };
 
@@ -67,38 +77,60 @@ plugin.onHook = (hookName) => {
   }
 };
 
+// ================= 按钮 =================
+
 plugin._ensureInjectedButton = () => {
   const { ui, components, core } = plugin._ctx || {};
   if (!ui || !ui.tabs || !components) return;
 
-  // 只在 browse 模式显示
   const shouldShow = !!(core && core.mode === "browse");
 
   let btn = ui.tabs.querySelector('[data-mdx-enhanced-btn="1"]');
+
   if (!btn) {
     btn = components.createWindowButton("MD极速", {
       background: "rgba(60,160,255,0.18)",
       border: "1px solid rgba(60,160,255,0.26)",
       borderRadius: "10px"
     });
+
     btn.dataset.mdxEnhancedBtn = "1";
+
     btn.onclick = async () => {
       if (!plugin._state.installed) {
         await plugin._install(false);
+
         alert(plugin._state.ok
-          ? "Markdown 极速解析已启用（按需加载/缓存）。\nAI 输出 Markdown 预览已接管（若扩展支持）。\n.md/.markdown 文件预览已修复。"
+          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。"
           : `启用失败（已回退）：${plugin._state.failReason || "未知原因"}`);
+
         return;
       }
-      const act = prompt("已启用：\n1) 关闭接管\n2) 清空本地库缓存\n3) 立即预加载可选库\n其它取消", "1");
-      if (act === "1") { plugin._uninstall(); alert("已恢复为原解析器。"); }
-      else if (act === "2") { plugin._clearLibCache(); alert("已清空本地库缓存。"); }
-      else if (act === "3") { plugin._preloadOptionalInIdle(); alert("已安排空闲时预加载可选库。"); }
+
+      const act = prompt(
+        "已启用：\n1) 关闭接管\n2) 清空本地库缓存\n3) 立即预加载可选库\n其它取消",
+        "1"
+      );
+
+      if (act === "1") {
+        plugin._uninstall();
+        alert("已恢复为原解析器。");
+      } else if (act === "2") {
+        plugin._clearLibCache();
+        alert("已清空本地库缓存。");
+      } else if (act === "3") {
+        plugin._preloadOptionalInIdle();
+        alert("已安排空闲时预加载可选库。");
+      }
     };
+
     ui.tabs.appendChild(btn);
   }
+
   btn.style.display = shouldShow ? "" : "none";
 };
+
+// ================= 安装 / 卸载 =================
 
 plugin._tryAutoInstall = async () => {
   await plugin._install(true);
@@ -113,20 +145,21 @@ plugin._install = async (silent) => {
     if (!utils) throw new Error("上下文缺失：utils 不存在");
     if (plugin._state.installed) return;
 
-    if (!plugin._state.oldParseMarkdown) plugin._state.oldParseMarkdown = utils.parseMarkdown;
+    if (!plugin._state.oldParseMarkdown) {
+      plugin._state.oldParseMarkdown = utils.parseMarkdown;
+    }
 
     plugin._preconnect();
     await plugin._loadRequiredFast();
+
+    plugin._injectPanelThemeCss();
     plugin._ensureObserver();
     plugin._preloadOptionalInIdle();
 
     utils.parseMarkdown = (text, owner, repo, branch) =>
       plugin._enhancedParseMarkdown(text, owner, repo, branch);
 
-    // 接管 AI 输出（Markdown 渲染）
     plugin._installAIOutputHook();
-
-    // 修复：.md / .markdown 文件预览解析（不再只限 README.md）
     plugin._installOpenFileHook();
 
     plugin._state.installed = true;
@@ -138,7 +171,9 @@ plugin._install = async (silent) => {
 
     try {
       const { utils } = plugin._ctx || {};
-      if (utils && plugin._state.oldParseMarkdown) utils.parseMarkdown = plugin._state.oldParseMarkdown;
+      if (utils && plugin._state.oldParseMarkdown) {
+        utils.parseMarkdown = plugin._state.oldParseMarkdown;
+      }
     } catch {}
 
     try { plugin._uninstallAIOutputHook(); } catch {}
@@ -152,14 +187,26 @@ plugin._install = async (silent) => {
 
 plugin._uninstall = () => {
   const { utils } = plugin._ctx || {};
-  if (utils && plugin._state.oldParseMarkdown) utils.parseMarkdown = plugin._state.oldParseMarkdown;
+
+  if (utils && plugin._state.oldParseMarkdown) {
+    utils.parseMarkdown = plugin._state.oldParseMarkdown;
+  }
 
   plugin._uninstallAIOutputHook();
   plugin._uninstallOpenFileHook();
 
+  try {
+    if (plugin._state.observer) {
+      plugin._state.observer.disconnect();
+      plugin._state.observer = null;
+    }
+  } catch {}
+
   plugin._state.installed = false;
   plugin._state.ok = false;
 };
+
+// ================= AI 输出 Hook =================
 
 plugin._installAIOutputHook = () => {
   const ext = plugin._ctx?.extension;
@@ -167,11 +214,15 @@ plugin._installAIOutputHook = () => {
   if (plugin._state.aiRenderHookInstalled) return;
   if (typeof ext._renderAIOutput !== "function") return;
 
-  if (!plugin._state.oldRenderAIOutput) plugin._state.oldRenderAIOutput = ext._renderAIOutput;
+  if (!plugin._state.oldRenderAIOutput) {
+    plugin._state.oldRenderAIOutput = ext._renderAIOutput;
+  }
 
   ext._renderAIOutput = function () {
-    // 先调用原来的（保持原逻辑）
-    try { plugin._state.oldRenderAIOutput && plugin._state.oldRenderAIOutput.call(this); } catch {}
+    try {
+      plugin._state.oldRenderAIOutput &&
+        plugin._state.oldRenderAIOutput.call(this);
+    } catch {}
 
     const ui = this?.ui;
     const core = this?.core;
@@ -179,16 +230,26 @@ plugin._installAIOutputHook = () => {
 
     const pre = ui.aiOutputPre;
 
-    const err = core.aiManager.streamError ? `\n\n[Error]\n${core.aiManager.streamError}\n` : "";
-    const tail = core.aiManager.isStreaming ? "\n\n(Streaming...)" : "";
+    const err = core.aiManager.streamError
+      ? `\n\n[Error]\n${core.aiManager.streamError}\n`
+      : "";
+
+    const tail = core.aiManager.isStreaming
+      ? "\n\n(Streaming...)"
+      : "";
+
     const raw = (core.aiManager.streamBuffer || "") + err + tail;
 
     try {
       const utils = plugin._ctx?.utils;
       if (utils && typeof utils.parseMarkdown === "function") {
-        const html = utils.parseMarkdown(raw, core.currentOwner, core.currentRepo, core.currentBranch);
         pre.style.whiteSpace = "normal";
-        pre.innerHTML = html || "";
+        pre.innerHTML = utils.parseMarkdown(
+          raw,
+          core.currentOwner,
+          core.currentRepo,
+          core.currentBranch
+        ) || "";
       } else {
         pre.style.whiteSpace = "pre-wrap";
         pre.textContent = raw;
@@ -214,11 +275,17 @@ plugin._uninstallAIOutputHook = () => {
   if (!ext) return;
   if (!plugin._state.aiRenderHookInstalled) return;
 
-  if (plugin._state.oldRenderAIOutput && typeof plugin._state.oldRenderAIOutput === "function") {
+  if (
+    plugin._state.oldRenderAIOutput &&
+    typeof plugin._state.oldRenderAIOutput === "function"
+  ) {
     ext._renderAIOutput = plugin._state.oldRenderAIOutput;
   }
+
   plugin._state.aiRenderHookInstalled = false;
 };
+
+// ================= 文件打开 Hook =================
 
 plugin._isMarkdownFile = (fileLike) => {
   const name = String(fileLike?.name || "").toLowerCase();
@@ -235,47 +302,46 @@ plugin._installOpenFileHook = () => {
   if (plugin._state.openFileHookInstalled) return;
   if (typeof ext.openFile !== "function") return;
 
-  if (!plugin._state.oldOpenFile) plugin._state.oldOpenFile = ext.openFile;
+  if (!plugin._state.oldOpenFile) {
+    plugin._state.oldOpenFile = ext.openFile;
+  }
 
   ext.openFile = async function (file) {
-    // 先走原逻辑（让扩展创建 UI/加载内容/挂载 mdToggleBtn 等）
     await plugin._state.oldOpenFile.call(this, file);
 
-    // 只对 .md / .markdown / README 类文件做“预览修复”
     if (!plugin._isMarkdownFile(file)) return;
 
-    // 兼容：扩展必须存在 fileViewRefs
     const refs = this?.ui?.fileViewRefs;
     const core = this?.core;
     if (!refs || !core) return;
 
-    // 兼容：必须有 mdView + pre（你之前修复预览时加的）
-    const mdView = refs.mdView;
     const pre = refs.pre;
-    if (!mdView || !pre) return;
-
-    // 兼容：必须能取到编辑区文本（openFile 里会给 textarea.value = text）
     const textarea = refs.textarea || this?.ui?.editorTextarea;
+    if (!pre) return;
+
     const text = String(textarea?.value || pre?.textContent || "");
 
-    // 强制把预览内容用 utils.parseMarkdown 渲染（本插件接管后更强）
     try {
       const utils = plugin._ctx?.utils;
       if (utils && typeof utils.parseMarkdown === "function") {
-        mdView.innerHTML = utils.parseMarkdown(text, core.currentOwner, core.currentRepo, core.currentBranch);
+        pre.style.whiteSpace = "normal";
+        pre.innerHTML = utils.parseMarkdown(
+          text,
+          core.currentOwner,
+          core.currentRepo,
+          core.currentBranch
+        );
       } else {
-        // 没有 parseMarkdown 时，退化为文本
-        mdView.textContent = text;
+        pre.style.whiteSpace = "pre-wrap";
+        pre.textContent = text;
       }
     } catch {
-      mdView.textContent = text;
+      pre.style.whiteSpace = "pre-wrap";
+      pre.textContent = text;
     }
 
-    // 默认显示预览（保持你“修复预览”的行为）
     try {
       core.isMarkdownPreview = true;
-      pre.style.display = "none";
-      mdView.style.display = "block";
     } catch {}
 
     try { plugin._scheduleEnhance(); } catch {}
@@ -289,46 +355,68 @@ plugin._uninstallOpenFileHook = () => {
   if (!ext) return;
   if (!plugin._state.openFileHookInstalled) return;
 
-  if (plugin._state.oldOpenFile && typeof plugin._state.oldOpenFile === "function") {
+  if (
+    plugin._state.oldOpenFile &&
+    typeof plugin._state.oldOpenFile === "function"
+  ) {
     ext.openFile = plugin._state.oldOpenFile;
   }
+
   plugin._state.openFileHookInstalled = false;
 };
+
+// ================= 资源加载 =================
 
 plugin._preconnect = () => {
   if (plugin._state.preconnectDone) return;
   plugin._state.preconnectDone = true;
 
-  const urls = ["https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"];
-  for (const base of urls) {
-    const dns = document.createElement("link");
-    dns.rel = "dns-prefetch";
-    dns.href = base;
-    document.head.appendChild(dns);
+  const urls = [
+    "https://cdn.jsdelivr.net",
+    "https://cdnjs.cloudflare.com",
+    "https://raw.githubusercontent.com"
+  ];
 
-    const pc = document.createElement("link");
-    pc.rel = "preconnect";
-    pc.href = base;
-    pc.crossOrigin = "anonymous";
-    document.head.appendChild(pc);
+  for (const base of urls) {
+    try {
+      const dns = document.createElement("link");
+      dns.rel = "dns-prefetch";
+      dns.href = base;
+      document.head.appendChild(dns);
+    } catch {}
+
+    try {
+      const pc = document.createElement("link");
+      pc.rel = "preconnect";
+      pc.href = base;
+      pc.crossOrigin = "anonymous";
+      document.head.appendChild(pc);
+    } catch {}
   }
 };
 
-plugin._cacheKey = (name, url) => `${plugin._state.cache.schema}:${name}:${url}`;
+plugin._cacheKey = (name, url) =>
+  `${plugin._state.cache.schema}:${name}:${url}`;
 
 plugin._getCachedLib = (name, url) => {
   try {
     if (!plugin._state.cache.enabled) return null;
+
     const raw = localStorage.getItem(plugin._cacheKey(name, url));
     if (!raw) return null;
+
     const obj = JSON.parse(raw);
     if (!obj || obj.v !== plugin.version) return null;
+
     if (obj.exp && Date.now() > obj.exp) {
       localStorage.removeItem(plugin._cacheKey(name, url));
       return null;
     }
+
     return typeof obj.code === "string" && obj.code ? obj.code : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 };
 
 plugin._setCachedLib = (name, url, code) => {
@@ -336,19 +424,29 @@ plugin._setCachedLib = (name, url, code) => {
     if (!plugin._state.cache.enabled) return false;
     if (typeof code !== "string" || !code) return false;
     if (code.length > plugin._state.cache.maxCharsPerLib) return false;
-    const obj = { v: plugin.version, exp: Date.now() + plugin._state.cache.ttlMs, code };
+
+    const obj = {
+      v: plugin.version,
+      exp: Date.now() + plugin._state.cache.ttlMs,
+      code
+    };
+
     localStorage.setItem(plugin._cacheKey(name, url), JSON.stringify(obj));
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 };
 
 plugin._clearLibCache = () => {
   const prefix = `${plugin._state.cache.schema}:`;
   const del = [];
+
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (k && k.startsWith(prefix)) del.push(k);
   }
+
   del.forEach(k => localStorage.removeItem(k));
 };
 
@@ -360,11 +458,14 @@ plugin._injectInlineScript = (id, code) => new Promise((resolve, reject) => {
     s.text = code;
     document.head.appendChild(s);
     resolve();
-  } catch (e) { reject(e); }
+  } catch (e) {
+    reject(e);
+  }
 });
 
 plugin._loadScriptSrc = (id, src) => new Promise((resolve, reject) => {
   if (document.getElementById(id)) return resolve();
+
   const s = document.createElement("script");
   s.id = id;
   s.src = src;
@@ -378,15 +479,22 @@ plugin._loadScriptFast = async (id, url) => {
   if (document.getElementById(id)) return;
 
   const cached = plugin._getCachedLib(id, url);
+
   if (cached) {
-    try { await plugin._injectInlineScript(id, cached); return; }
-    catch { return plugin._loadScriptSrc(id, url); }
+    try {
+      await plugin._injectInlineScript(id, cached);
+      return;
+    } catch {
+      return plugin._loadScriptSrc(id, url);
+    }
   }
 
   try {
     const res = await fetch(url, { cache: "force-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     const code = await res.text();
+
     try {
       await plugin._injectInlineScript(id, code);
       plugin._setCachedLib(id, url, code);
@@ -402,6 +510,7 @@ plugin._loadScriptFast = async (id, url) => {
 plugin._loadCssOnce = (id, href) => new Promise((resolve, reject) => {
   if (!href) return resolve();
   if (document.getElementById(id)) return resolve();
+
   const link = document.createElement("link");
   link.id = id;
   link.rel = "stylesheet";
@@ -412,11 +521,16 @@ plugin._loadCssOnce = (id, href) => new Promise((resolve, reject) => {
 });
 
 plugin._loadRequiredFast = async () => {
-  await plugin._loadCssOnce("mdx-gh-markdown-css", plugin._state.cdn.ghMarkdownCss);
+  await plugin._loadCssOnce(
+    "mdx-gh-markdown-css",
+    plugin._state.cdn.ghMarkdownCss
+  );
+
   await Promise.all([
     plugin._loadScriptFast("mdx-marked", plugin._state.cdn.marked),
     plugin._loadScriptFast("mdx-dompurify", plugin._state.cdn.dompurify)
   ]);
+
   if (!window.marked) throw new Error("marked 未加载");
   if (!window.DOMPurify) throw new Error("DOMPurify 未加载");
 };
@@ -438,120 +552,773 @@ plugin._preloadOptionalInIdle = () => {
 plugin._ensureHljs = async () => {
   const st = plugin._state.optional.hljs;
   if (st.loaded || st.loading) return;
+
   st.loading = true;
+
   try {
     await plugin._loadCssOnce("mdx-hljs-css", plugin._state.cdn.hlCss);
     await plugin._loadScriptFast("mdx-hljs", plugin._state.cdn.highlight);
     st.loaded = !!window.hljs;
-  } finally { st.loading = false; }
+  } finally {
+    st.loading = false;
+  }
 };
 
 plugin._ensureKatex = async () => {
   const st = plugin._state.optional.katex;
   if (st.loaded || st.loading) return;
+
   st.loading = true;
+
   try {
     await plugin._loadCssOnce("mdx-katex-css", plugin._state.cdn.katexCss);
     await plugin._loadScriptFast("mdx-katex", plugin._state.cdn.katex);
     await plugin._loadScriptFast("mdx-katex-auto", plugin._state.cdn.katexAuto);
-    st.loaded = !!window.katex && typeof window.renderMathInElement === "function";
-  } finally { st.loading = false; }
+
+    st.loaded =
+      !!window.katex &&
+      typeof window.renderMathInElement === "function";
+  } finally {
+    st.loading = false;
+  }
 };
 
 plugin._ensureMermaid = async () => {
   const st = plugin._state.optional.mermaid;
   if (st.loaded || st.loading) return;
+
   st.loading = true;
+
   try {
     await plugin._loadScriptFast("mdx-mermaid", plugin._state.cdn.mermaid);
+
     if (window.mermaid) {
-      try { window.mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" }); } catch {}
-    }
-    st.loaded = !!window.mermaid && typeof window.mermaid.render === "function";
-  } finally { st.loading = false; }
-};
-
-plugin._injectPanelThemeCss = () => {
-  if (plugin._state.themeCssInjected) return;
-  plugin._state.themeCssInjected = true;
-
-  const id = "mdx-fast-panel-theme";
-  if (document.getElementById(id)) return;
-
-  const style = document.createElement("style");
-  style.id = id;
-  style.textContent = `
-.mdx-enhanced-root{color:rgba(255,255,255,0.92)!important;background:transparent!important;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;}
-.mdx-enhanced-root,.mdx-enhanced-root *{border-color:rgba(255,255,255,0.14)!important;}
-.mdx-enhanced-root a{color:#8af!important;text-decoration:none;}
-.mdx-enhanced-root a:hover{text-decoration:underline;}
-.mdx-enhanced-root h1,.mdx-enhanced-root h2,.mdx-enhanced-root h3,.mdx-enhanced-root h4,.mdx-enhanced-root h5,.mdx-enhanced-root h6{color:rgba(255,255,255,0.96)!important;}
-.mdx-enhanced-root h1,.mdx-enhanced-root h2{border-bottom:1px solid rgba(255,255,255,0.14)!important;padding-bottom:4px;}
-.mdx-enhanced-root blockquote{background:rgba(255,255,255,0.04)!important;border-left:4px solid rgba(255,255,255,0.22)!important;color:rgba(255,255,255,0.84)!important;padding:8px 10px;border-radius:8px;}
-.mdx-enhanced-root hr{border:none!important;border-top:1px solid rgba(255,255,255,0.14)!important;}
-.mdx-enhanced-root table{border-collapse:collapse!important;width:100%!important;background:rgba(0,0,0,0.18)!important;border:1px solid rgba(255,255,255,0.14)!important;border-radius:10px;overflow:hidden;}
-.mdx-enhanced-root thead{background:rgba(255,255,255,0.08)!important;}
-.mdx-enhanced-root th,.mdx-enhanced-root td{border:1px solid rgba(255,255,255,0.14)!important;padding:6px 8px!important;color:rgba(255,255,255,0.90)!important;}
-.mdx-enhanced-root tbody tr:nth-child(2n){background:rgba(255,255,255,0.03)!important;}
-.mdx-enhanced-root code{background:rgba(255,255,255,0.08)!important;color:rgba(255,255,255,0.92)!important;border-radius:6px;padding:0.1em 0.35em;}
-.mdx-enhanced-root pre{background:rgba(0,0,0,0.35)!important;border:1px solid rgba(255,255,255,0.14)!important;border-radius:10px;padding:10px 12px;overflow:auto;}
-.mdx-enhanced-root pre code{background:transparent!important;padding:0!important;}
-.mdx-enhanced-root .hljs{background:transparent!important;color:rgba(255,255,255,0.92)!important;}
-.mdx-enhanced-root img{border-radius:8px;max-width:100%;}
-.mdx-enhanced-root .katex{color:rgba(255,255,255,0.92)!important;}
-.mdx-enhanced-root .mermaid{background:rgba(255,255,255,0.03)!important;border:1px solid rgba(255,255,255,0.12)!important;border-radius:10px;padding:10px;overflow:auto;}
-`.trim();
-  document.head.appendChild(style);
-};
-
-plugin._rewriteRelativeAssets = (mdText, owner, repo, branch) => {
-  if (!mdText || !owner || !repo) return mdText;
-  const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${branch || "main"}`;
-  return mdText.replace(/!\[([^\]]*)\]\((?!https?:|#|data:)([^)]+)\)/g, (m, alt, path) => {
-    const clean = path.startsWith("/") ? path.slice(1) : path;
-    return `![${alt}](${rawBase}/${clean})`;
-  });
-};
-
-plugin._enhancedParseMarkdown = (text, owner, repo, branch) => {
-  const old = plugin._state.oldParseMarkdown;
-
-  try {
-    if (!window.marked || !window.DOMPurify) {
-      return old ? old(text, owner, repo, branch) : String(text || "");
+      try {
+        window.mermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          securityLevel: "loose"
+        });
+      } catch {}
     }
 
-    const md = plugin._rewriteRelativeAssets(String(text || ""), owner, repo, branch);
-
-    try { window.marked.setOptions({ gfm: true, breaks: false, headerIds: false, mangle: false }); } catch {}
-    const rawHtml = window.marked.parse(md);
-    const clean = window.DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
-
-    const needMermaid = /```mermaid|language-mermaid|<div class="mermaid"/i.test(md) || /language-mermaid/i.test(clean);
-    const needKatex = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\(|\\\[/.test(md);
-    const needHljs = /```/.test(md) || /<pre><code/.test(clean);
-
-    if (needHljs) plugin._ensureHljs().then(() => plugin._scheduleEnhance());
-    if (needKatex) plugin._ensureKatex().then(() => plugin._scheduleEnhance());
-    if (needMermaid) plugin._ensureMermaid().then(() => plugin._scheduleEnhance());
-
-    const html = `
-      <article class="markdown-body mdx-enhanced-root" data-mdx-enhanced="1" style="padding: 8px 2px;">
-        ${clean}
-      </article>
-    `;
-
-    plugin._scheduleEnhance();
-    return html;
-  } catch {
-    try { return old ? old(text, owner, repo, branch) : String(text || ""); }
-    catch { return String(text || ""); }
+    st.loaded =
+      !!window.mermaid &&
+      typeof window.mermaid.render === "function";
+  } finally {
+    st.loading = false;
   }
 };
 
+// ================= CSS =================
+
+plugin._injectPanelThemeCss = () => {
+  try {
+    const old1 = document.getElementById("mdx-fast-panel-theme");
+    if (old1) old1.remove();
+
+    const old2 = document.getElementById("mdx-fast-panel-theme-fixed");
+    if (old2) old2.remove();
+  } catch {}
+
+  const style = document.createElement("style");
+  style.id = "mdx-fast-panel-theme-fixed";
+
+  style.textContent = `
+.mdx-enhanced-root {
+  color: rgba(255,255,255,0.92) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color-scheme: dark;
+  --color-canvas-default: transparent !important;
+  --color-canvas-subtle: #555 !important;
+  --color-border-default: rgba(255,255,255,0.18) !important;
+  --color-border-muted: rgba(255,255,255,0.14) !important;
+  --color-fg-default: rgba(255,255,255,0.92) !important;
+  --color-fg-muted: rgba(255,255,255,0.75) !important;
+}
+
+.mdx-enhanced-root,
+.mdx-enhanced-root * {
+  border-color: rgba(255,255,255,0.14) !important;
+  box-sizing: border-box;
+}
+
+.mdx-enhanced-root a {
+  color: #8af !important;
+  text-decoration: none;
+}
+
+.mdx-enhanced-root a:hover {
+  text-decoration: underline;
+}
+
+.mdx-enhanced-root h1,
+.mdx-enhanced-root h2,
+.mdx-enhanced-root h3,
+.mdx-enhanced-root h4,
+.mdx-enhanced-root h5,
+.mdx-enhanced-root h6 {
+  color: rgba(255,255,255,0.96) !important;
+}
+
+.mdx-enhanced-root h1,
+.mdx-enhanced-root h2 {
+  border-bottom: 1px solid rgba(255,255,255,0.14) !important;
+  padding-bottom: 4px;
+}
+
+.mdx-enhanced-root blockquote {
+  background: rgba(255,255,255,0.04) !important;
+  background-color: rgba(255,255,255,0.04) !important;
+  border-left: 4px solid rgba(255,255,255,0.22) !important;
+  color: rgba(255,255,255,0.84) !important;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.mdx-enhanced-root hr {
+  border: none !important;
+  border-top: 1px solid rgba(255,255,255,0.14) !important;
+}
+
+.mdx-enhanced-root table,
+.markdown-body.mdx-enhanced-root table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  background: #555 !important;
+  background-color: #555 !important;
+  background-image: none !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+}
+
+.mdx-enhanced-root table thead,
+.mdx-enhanced-root table tbody,
+.mdx-enhanced-root table tr,
+.mdx-enhanced-root table th,
+.mdx-enhanced-root table td,
+.markdown-body.mdx-enhanced-root table thead,
+.markdown-body.mdx-enhanced-root table tbody,
+.markdown-body.mdx-enhanced-root table tr,
+.markdown-body.mdx-enhanced-root table th,
+.markdown-body.mdx-enhanced-root table td {
+  background: #555 !important;
+  background-color: #555 !important;
+  background-image: none !important;
+  color: rgba(255,255,255,0.92) !important;
+}
+
+.mdx-enhanced-root table tr:nth-child(2n),
+.mdx-enhanced-root table tr:nth-child(odd),
+.mdx-enhanced-root table tr:nth-child(even),
+.markdown-body.mdx-enhanced-root table tr:nth-child(2n),
+.markdown-body.mdx-enhanced-root table tr:nth-child(odd),
+.markdown-body.mdx-enhanced-root table tr:nth-child(even) {
+  background: #555 !important;
+  background-color: #555 !important;
+  background-image: none !important;
+}
+
+.mdx-enhanced-root table th {
+  font-weight: 700 !important;
+}
+
+.mdx-enhanced-root table th,
+.mdx-enhanced-root table td {
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  padding: 8px 10px !important;
+  min-width: 80px;
+}
+
+.mdx-enhanced-root code {
+  background: rgba(255,255,255,0.08) !important;
+  background-color: rgba(255,255,255,0.08) !important;
+  color: rgba(255,255,255,0.92) !important;
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+}
+
+.mdx-enhanced-root pre {
+  background: rgba(0,0,0,0.35) !important;
+  background-color: rgba(0,0,0,0.35) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.mdx-enhanced-root pre code {
+  background: transparent !important;
+  background-color: transparent !important;
+  padding: 0 !important;
+}
+
+.mdx-enhanced-root .hljs {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: rgba(255,255,255,0.92) !important;
+}
+
+.mdx-enhanced-root img,
+.mdx-enhanced-root video {
+  border-radius: 8px;
+  max-width: 100%;
+}
+
+.mdx-enhanced-root .katex {
+  color: rgba(255,255,255,0.92) !important;
+}
+
+.mdx-enhanced-root .mermaid {
+  background: rgba(255,255,255,0.03) !important;
+  background-color: rgba(255,255,255,0.03) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 10px;
+  padding: 10px;
+  overflow: auto;
+}
+`.trim();
+
+  document.head.appendChild(style);
+};
+
+// ================= 仓库上下文兜底 =================
+
+plugin._getMdxRepoContext = (owner, repo, branch) => {
+  const core = plugin._ctx?.core || {};
+
+  const finalOwner = String(
+    owner ||
+    core.currentOwner ||
+    ""
+  ).trim();
+
+  const finalRepo = String(
+    repo ||
+    core.currentRepo ||
+    ""
+  ).trim();
+
+  const finalBranch = String(
+    branch ||
+    core.currentBranch ||
+    core.defaultBranch ||
+    "main"
+  ).trim();
+
+  return {
+    owner: finalOwner,
+    repo: finalRepo,
+    branch: finalBranch || "main"
+  };
+};
+
+// ================= 路径工具 =================
+
+plugin._isMdxExternalUrl = (url) => {
+  const u = String(url || "").trim();
+  if (!u) return true;
+
+  if (u.startsWith("#")) return true;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(u)) return true;
+  if (u.startsWith("//")) return true;
+
+  return false;
+};
+
+plugin._splitMdxUrlSuffix = (url) => {
+  const s = String(url || "");
+  const q = s.search(/[?#]/);
+
+  if (q < 0) return { path: s, suffix: "" };
+
+  return {
+    path: s.slice(0, q),
+    suffix: s.slice(q)
+  };
+};
+
+plugin._parseMdxTargetWithTitle = (rawTarget) => {
+  const raw = String(rawTarget || "").trim();
+
+  if (raw.startsWith("<") && raw.endsWith(">")) {
+    return {
+      url: raw.slice(1, -1).trim(),
+      title: "",
+      wrappedByAngle: true
+    };
+  }
+
+  const m = raw.match(/^(\S+)(\s+["'][\s\S]*["'])$/);
+
+  if (m) {
+    return {
+      url: m[1],
+      title: m[2] || "",
+      wrappedByAngle: false
+    };
+  }
+
+  return {
+    url: raw,
+    title: "",
+    wrappedByAngle: false
+  };
+};
+
+plugin._buildMdxTargetWithTitle = (url, title, wrappedByAngle) => {
+  const u = wrappedByAngle ? `<${url}>` : url;
+  return `${u}${title || ""}`;
+};
+
+plugin._getCurrentMarkdownBaseDir = () => {
+  const core = plugin._ctx?.core;
+
+  let baseDir = String(core?.currentPath || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+
+  if (/\.[a-zA-Z0-9]{1,16}$/.test(baseDir)) {
+    baseDir = baseDir.split("/").slice(0, -1).join("/");
+  }
+
+  return baseDir;
+};
+
+plugin._normalizeRepoPath = (inputPath, owner, repo, branch, baseDir) => {
+  let raw = String(inputPath || "").trim();
+
+  if (raw.startsWith("<") && raw.endsWith(">")) {
+    raw = raw.slice(1, -1).trim();
+  }
+
+  const { path, suffix } = plugin._splitMdxUrlSuffix(raw);
+
+  let p = String(path || "")
+    .replace(/\\/g, "/")
+    .trim();
+
+  if (!p) return "";
+
+  const absoluteFromRepoRoot = p.startsWith("/");
+
+  p = p.replace(/^\/+/, "");
+  p = p.replace(/^\.\/+/, "");
+
+  const safeOwner = String(owner || "").trim();
+  const safeRepo = String(repo || "").trim();
+
+  let parts = p.split("/").filter(Boolean);
+
+  // owner/repo/path
+  if (
+    parts.length >= 3 &&
+    parts[0].toLowerCase() === safeOwner.toLowerCase() &&
+    parts[1].toLowerCase() === safeRepo.toLowerCase()
+  ) {
+    p = parts.slice(2).join("/");
+  }
+
+  parts = p.split("/").filter(Boolean);
+
+  // owner/repo/blob/branch/path
+  if (
+    parts.length >= 5 &&
+    parts[0].toLowerCase() === safeOwner.toLowerCase() &&
+    parts[1].toLowerCase() === safeRepo.toLowerCase() &&
+    /^(blob|raw|tree)$/i.test(parts[2])
+  ) {
+    p = parts.slice(4).join("/");
+  }
+
+  parts = p.split("/").filter(Boolean);
+
+  // blob/branch/path
+  if (
+    parts.length >= 3 &&
+    /^(blob|raw|tree)$/i.test(parts[0])
+  ) {
+    p = parts.slice(2).join("/");
+  }
+
+  parts = p.split("/").filter(Boolean);
+
+  // refs/heads/main/path
+  if (
+    parts.length >= 4 &&
+    parts[0] === "refs" &&
+    parts[1] === "heads"
+  ) {
+    p = parts.slice(3).join("/");
+  }
+
+  baseDir = String(baseDir || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+
+  const alreadyStartsWithBase =
+    baseDir &&
+    (
+      p === baseDir ||
+      p.startsWith(baseDir + "/")
+    );
+
+  if (!absoluteFromRepoRoot && baseDir && !alreadyStartsWithBase) {
+    p = `${baseDir}/${p}`;
+  }
+
+  const stack = [];
+
+  for (const seg of p.split("/")) {
+    if (!seg || seg === ".") continue;
+
+    if (seg === "..") {
+      stack.pop();
+    } else {
+      stack.push(seg);
+    }
+  }
+
+  return stack.join("/") + suffix;
+};
+
+plugin._encodeRepoPathForUrl = (repoPath) => {
+  const { path, suffix } = plugin._splitMdxUrlSuffix(repoPath);
+
+  const encodedPath = String(path || "")
+    .split("/")
+    .map(seg => encodeURIComponent(seg))
+    .join("/");
+
+  return encodedPath + suffix;
+};
+
+plugin._toRawGitHubUrl = (repoPath, owner, repo, branch) => {
+  const b = encodeURIComponent(branch || "main");
+  const p = plugin._encodeRepoPathForUrl(repoPath);
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${b}/${p}`;
+};
+
+plugin._toGitHubBlobUrl = (repoPath, owner, repo, branch) => {
+  const b = encodeURIComponent(branch || "main");
+  const p = plugin._encodeRepoPathForUrl(repoPath);
+  return `https://github.com/${owner}/${repo}/blob/${b}/${p}`;
+};
+
+// ================= HTML 标签 src/href 优化 =================
+
+plugin._rewriteSrcset = (srcset, ctx, baseDir) => {
+  return String(srcset || "")
+    .split(",")
+    .map(part => {
+      const raw = part.trim();
+      if (!raw) return raw;
+
+      const pieces = raw.split(/\s+/);
+      const url = pieces.shift();
+
+      if (!url || plugin._isMdxExternalUrl(url)) return raw;
+
+      const repoPath = plugin._normalizeRepoPath(
+        url,
+        ctx.owner,
+        ctx.repo,
+        ctx.branch,
+        baseDir
+      );
+
+      if (!repoPath) return raw;
+
+      const finalUrl = plugin._toRawGitHubUrl(
+        repoPath,
+        ctx.owner,
+        ctx.repo,
+        ctx.branch
+      );
+
+      return [finalUrl, ...pieces].join(" ");
+    })
+    .join(", ");
+};
+
+plugin._rewriteHtmlRelativeAttrs = (htmlText, owner, repo, branch) => {
+  if (!htmlText) return htmlText;
+
+  const ctx = plugin._getMdxRepoContext(owner, repo, branch);
+  if (!ctx.owner || !ctx.repo) return htmlText;
+
+  const baseDir = plugin._getCurrentMarkdownBaseDir();
+
+  const rewriteOne = (value, mode) => {
+    const raw = String(value || "").trim();
+
+    if (!raw) return raw;
+    if (plugin._isMdxExternalUrl(raw)) return raw;
+
+    const repoPath = plugin._normalizeRepoPath(
+      raw,
+      ctx.owner,
+      ctx.repo,
+      ctx.branch,
+      baseDir
+    );
+
+    if (!repoPath) return raw;
+
+    if (mode === "raw") {
+      return plugin._toRawGitHubUrl(
+        repoPath,
+        ctx.owner,
+        ctx.repo,
+        ctx.branch
+      );
+    }
+
+    return plugin._toGitHubBlobUrl(
+      repoPath,
+      ctx.owner,
+      ctx.repo,
+      ctx.branch
+    );
+  };
+
+  let out = String(htmlText);
+
+  // img/source/audio/video/iframe src => raw
+  out = out.replace(
+    /<(img|source|audio|video|iframe)\b([^>]*?)\s(src)=["']([^"']+)["']([^>]*)>/gi,
+    (match, tag, before, attr, value, after) => {
+      return `<${tag}${before} ${attr}="${rewriteOne(value, "raw")}"${after}>`;
+    }
+  );
+
+  // img/source srcset => raw
+  out = out.replace(
+    /<(img|source)\b([^>]*?)\s(srcset)=["']([^"']+)["']([^>]*)>/gi,
+    (match, tag, before, attr, value, after) => {
+      return `<${tag}${before} ${attr}="${plugin._rewriteSrcset(value, ctx, baseDir)}"${after}>`;
+    }
+  );
+
+  // video poster => raw
+  out = out.replace(
+    /<(video)\b([^>]*?)\s(poster)=["']([^"']+)["']([^>]*)>/gi,
+    (match, tag, before, attr, value, after) => {
+      return `<${tag}${before} ${attr}="${rewriteOne(value, "raw")}"${after}>`;
+    }
+  );
+
+  // a href => blob
+  out = out.replace(
+    /<(a)\b([^>]*?)\s(href)=["']([^"']+)["']([^>]*)>/gi,
+    (match, tag, before, attr, value, after) => {
+      return `<${tag}${before} ${attr}="${rewriteOne(value, "blob")}"${after}>`;
+    }
+  );
+
+  return out;
+};
+
+// ================= Markdown 图片/链接优化 =================
+
+plugin._rewriteRelativeAssets = (mdText, owner, repo, branch) => {
+  if (!mdText) return mdText;
+
+  const ctx = plugin._getMdxRepoContext(owner, repo, branch);
+  if (!ctx.owner || !ctx.repo) return mdText;
+
+  let text = String(mdText || "");
+
+  // 先处理 HTML 标签，例如：
+  // <img src="assets/image.png">
+  // <a href="docs/readme.md">
+  text = plugin._rewriteHtmlRelativeAttrs(
+    text,
+    ctx.owner,
+    ctx.repo,
+    ctx.branch
+  );
+
+  const baseDir = plugin._getCurrentMarkdownBaseDir();
+
+  const imageTokens = [];
+
+  // Markdown 图片
+  text = text.replace(/!\[([^\]]*)\]\(([^)\n]+)\)/g, (match, alt, rawTarget) => {
+    const parsed = plugin._parseMdxTargetWithTitle(rawTarget);
+    const url = parsed.url;
+
+    if (plugin._isMdxExternalUrl(url)) {
+      const token = `\uE000MDX_IMG_${imageTokens.length}\uE000`;
+      imageTokens.push(match);
+      return token;
+    }
+
+    const repoPath = plugin._normalizeRepoPath(
+      url,
+      ctx.owner,
+      ctx.repo,
+      ctx.branch,
+      baseDir
+    );
+
+    if (!repoPath) {
+      const token = `\uE000MDX_IMG_${imageTokens.length}\uE000`;
+      imageTokens.push(match);
+      return token;
+    }
+
+    const finalUrl = plugin._toRawGitHubUrl(
+      repoPath,
+      ctx.owner,
+      ctx.repo,
+      ctx.branch
+    );
+
+    const finalTarget = plugin._buildMdxTargetWithTitle(
+      finalUrl,
+      parsed.title,
+      parsed.wrappedByAngle
+    );
+
+    const rewritten = `![${alt}](${finalTarget})`;
+
+    const token = `\uE000MDX_IMG_${imageTokens.length}\uE000`;
+    imageTokens.push(rewritten);
+    return token;
+  });
+
+  // Markdown 普通链接
+  text = text.replace(/\[([^\]]+)\]\(([^)\n]+)\)/g, (match, label, rawTarget) => {
+    const parsed = plugin._parseMdxTargetWithTitle(rawTarget);
+    const url = parsed.url;
+
+    if (plugin._isMdxExternalUrl(url)) return match;
+
+    const repoPath = plugin._normalizeRepoPath(
+      url,
+      ctx.owner,
+      ctx.repo,
+      ctx.branch,
+      baseDir
+    );
+
+    if (!repoPath) return match;
+
+    const finalUrl = plugin._toGitHubBlobUrl(
+      repoPath,
+      ctx.owner,
+      ctx.repo,
+      ctx.branch
+    );
+
+    const finalTarget = plugin._buildMdxTargetWithTitle(
+      finalUrl,
+      parsed.title,
+      parsed.wrappedByAngle
+    );
+
+    return `[${label}](${finalTarget})`;
+  });
+
+  text = text.replace(/\uE000MDX_IMG_(\d+)\uE000/g, (_, i) => {
+    return imageTokens[Number(i)] || "";
+  });
+
+  return text;
+};
+
+// ================= Markdown 解析 =================
+
+plugin._enhancedParseMarkdown = (text, owner, repo, branch) => {
+  const old = plugin._state.oldParseMarkdown;
+  const ctx = plugin._getMdxRepoContext(owner, repo, branch);
+
+  try {
+    if (!window.marked || !window.DOMPurify) {
+      return old
+        ? old(text, ctx.owner, ctx.repo, ctx.branch)
+        : String(text || "");
+    }
+
+    const md = plugin._rewriteRelativeAssets(
+      String(text || ""),
+      ctx.owner,
+      ctx.repo,
+      ctx.branch
+    );
+
+    try {
+      window.marked.setOptions({
+        gfm: true,
+        breaks: false,
+        headerIds: false,
+        mangle: false
+      });
+    } catch {}
+
+    const rawHtml = window.marked.parse(md);
+
+    const clean = window.DOMPurify.sanitize(rawHtml, {
+      USE_PROFILES: { html: true }
+    });
+
+    const needMermaid =
+      /```mermaid|language-mermaid|<div class="mermaid"/i.test(md) ||
+      /language-mermaid/i.test(clean);
+
+    const needKatex =
+      /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\(|\\\[/.test(md);
+
+    const needHljs =
+      /```/.test(md) ||
+      /<pre><code/.test(clean);
+
+    if (needHljs) {
+      plugin._ensureHljs().then(() => plugin._scheduleEnhance());
+    }
+
+    if (needKatex) {
+      plugin._ensureKatex().then(() => plugin._scheduleEnhance());
+    }
+
+    if (needMermaid) {
+      plugin._ensureMermaid().then(() => plugin._scheduleEnhance());
+    }
+
+    const html = `
+<article class="markdown-body mdx-enhanced-root" data-mdx-enhanced="1" style="padding: 8px 2px;">
+${clean}
+</article>
+    `.trim();
+
+    plugin._scheduleEnhance();
+
+    return html;
+  } catch {
+    try {
+      return old
+        ? old(text, ctx.owner, ctx.repo, ctx.branch)
+        : String(text || "");
+    } catch {
+      return String(text || "");
+    }
+  }
+};
+
+// ================= 后处理增强 =================
+
 plugin._scheduleEnhance = () => {
   if (plugin._state.enhanceScheduled) return;
+
   plugin._state.enhanceScheduled = true;
+
   Promise.resolve().then(() => {
     plugin._state.enhanceScheduled = false;
     plugin._enhanceAll();
@@ -560,25 +1327,43 @@ plugin._scheduleEnhance = () => {
 
 plugin._ensureObserver = () => {
   if (plugin._state.observer) return;
-  const obs = new MutationObserver(() => plugin._scheduleEnhance());
-  obs.observe(document.body, { childList: true, subtree: true });
+
+  const obs = new MutationObserver(() => {
+    plugin._scheduleEnhance();
+  });
+
+  obs.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
   plugin._state.observer = obs;
 };
 
 plugin._enhanceAll = async () => {
-  const roots = Array.from(document.querySelectorAll(".mdx-enhanced-root[data-mdx-enhanced='1']"));
+  const roots = Array.from(
+    document.querySelectorAll(".mdx-enhanced-root[data-mdx-enhanced='1']")
+  );
+
   for (const root of roots) {
     if (root.dataset._mdxDone === "1") continue;
+
     root.dataset._mdxDone = "1";
-    try { await plugin._enhanceOne(root); }
-    catch { root.dataset._mdxDone = "0"; }
+
+    try {
+      await plugin._enhanceOne(root);
+    } catch {
+      root.dataset._mdxDone = "0";
+    }
   }
 };
 
 plugin._enhanceOne = async (root) => {
   if (window.hljs) {
     root.querySelectorAll("pre code").forEach((b) => {
-      try { window.hljs.highlightElement(b); } catch {}
+      try {
+        window.hljs.highlightElement(b);
+      } catch {}
     });
   }
 
@@ -602,9 +1387,15 @@ plugin._enhanceOne = async (root) => {
 };
 
 plugin._renderMermaidIn = async (root) => {
-  const blocks = Array.from(root.querySelectorAll("pre code.language-mermaid, code.language-mermaid, div.mermaid"));
+  const blocks = Array.from(
+    root.querySelectorAll(
+      "pre code.language-mermaid, code.language-mermaid, div.mermaid"
+    )
+  );
+
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
+
     if (block.dataset && block.dataset._mdMermaidDone === "1") continue;
     if (block.dataset) block.dataset._mdMermaidDone = "1";
 
@@ -614,9 +1405,11 @@ plugin._renderMermaidIn = async (root) => {
     try {
       const id = `mdx-mermaid-${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`;
       const out = await window.mermaid.render(id, code);
+
       const container = document.createElement("div");
       container.className = "mermaid";
       container.innerHTML = out.svg;
+
       (block.closest("pre") || block).replaceWith(container);
     } catch {}
   }
