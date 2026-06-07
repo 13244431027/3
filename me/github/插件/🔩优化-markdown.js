@@ -9,13 +9,14 @@
 // 7. 表格纯灰色，无白色/斑马纹
 // 8. AI 输出 Markdown 预览
 // 9. 支持 highlight.js / KaTeX / Mermaid 按需加载
+// 10. 优化 `行内代码` 自动换行问题，代码块横向滚动
 
 plugin.id = "plugin.markdown.enhanced.fast";
 plugin.name = "Markdown 优化解析（极速请求）";
-plugin.version = "1.3.6";
+plugin.version = "1.3.7";
 plugin.author = "ChatGPT";
-plugin.description = ".md / .markdown / README 预览优化，支持 Markdown 与 HTML 图片/链接自动补全。";
-plugin.tags = ["markdown优化", "推荐"];
+plugin.description = ".md / .markdown / README 预览优化，支持 Markdown 与 HTML 图片/链接自动补全，修复行内代码换行。";
+plugin.tags = ["markdown优化", "推荐", "marked", "ai", "md", "markdown", "图片路径", "链接补全", "html-img", "代码不换行"];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
@@ -50,7 +51,7 @@ plugin.init = (ctx) => {
 
     cache: {
       enabled: true,
-      schema: "mdx-libcache-v3",
+      schema: "mdx-libcache-v4",
       ttlMs: 30 * 24 * 3600 * 1000,
       maxCharsPerLib: 900_000
     },
@@ -101,7 +102,7 @@ plugin._ensureInjectedButton = () => {
         await plugin._install(false);
 
         alert(plugin._state.ok
-          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。"
+          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。\n`行内代码` 不自动换行已优化。"
           : `启用失败（已回退）：${plugin._state.failReason || "未知原因"}`);
 
         return;
@@ -685,6 +686,8 @@ plugin._injectPanelThemeCss = () => {
   border-top: 1px solid rgba(255,255,255,0.14) !important;
 }
 
+/* ================= 表格纯灰 ================= */
+
 .mdx-enhanced-root table,
 .markdown-body.mdx-enhanced-root table {
   width: 100% !important;
@@ -736,13 +739,45 @@ plugin._injectPanelThemeCss = () => {
   min-width: 80px;
 }
 
+/* ================= 行内代码：不自动换行 ================= */
+
 .mdx-enhanced-root code {
   background: rgba(255,255,255,0.08) !important;
   background-color: rgba(255,255,255,0.08) !important;
   color: rgba(255,255,255,0.92) !important;
   border-radius: 6px;
   padding: 0.1em 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
 }
+
+/* 关键修复：\`行内代码\` 不换行 */
+.mdx-enhanced-root :not(pre) > code {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  display: inline;
+}
+
+/* 防止 GitHub markdown CSS 或外部样式强制打断行内代码 */
+.mdx-enhanced-root p code,
+.mdx-enhanced-root li code,
+.mdx-enhanced-root td code,
+.mdx-enhanced-root th code,
+.mdx-enhanced-root blockquote code,
+.mdx-enhanced-root h1 code,
+.mdx-enhanced-root h2 code,
+.mdx-enhanced-root h3 code,
+.mdx-enhanced-root h4 code,
+.mdx-enhanced-root h5 code,
+.mdx-enhanced-root h6 code,
+.mdx-enhanced-root a code,
+.mdx-enhanced-root span code {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+
+/* ================= 代码块：横向滚动，不强制换行 ================= */
 
 .mdx-enhanced-root pre {
   background: rgba(0,0,0,0.35) !important;
@@ -750,20 +785,35 @@ plugin._injectPanelThemeCss = () => {
   border: 1px solid rgba(255,255,255,0.14) !important;
   border-radius: 10px;
   padding: 10px 12px;
-  overflow: auto;
+  overflow-x: auto !important;
+  overflow-y: auto;
+  max-width: 100%;
+  white-space: pre !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
 }
 
 .mdx-enhanced-root pre code {
+  display: block !important;
   background: transparent !important;
   background-color: transparent !important;
   padding: 0 !important;
+  white-space: pre !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  min-width: max-content;
 }
 
 .mdx-enhanced-root .hljs {
   background: transparent !important;
   background-color: transparent !important;
   color: rgba(255,255,255,0.92) !important;
+  white-space: pre !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
 }
+
+/* ================= 其他 ================= */
 
 .mdx-enhanced-root img,
 .mdx-enhanced-root video {
