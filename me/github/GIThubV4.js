@@ -1,4 +1,3 @@
-
 // ==================== 模块定义 ====================
 
 // 工具模块
@@ -104,7 +103,7 @@ class Utils {
       let html = '<table style="border-collapse:collapse;width:100%;margin:10px 0;border:1px solid #555;">';
       html += '<thead><tr style="background:rgba(255,255,255,0.1)">';
       headers.forEach(h => html += `<th style="border:1px solid #555;padding:6px;">${h}</th>`);
-      html += '</tr></thead><tbody>';
+      html += `</table></thead><tbody>`;
       rows.forEach(row => {
         html += '<tr>';
         row.forEach((cell, i) => {
@@ -506,22 +505,6 @@ class AIManager {
           stream: true
         }
       };
-    } else if (this.provider === 'siliconflow') {
-      if (!this.config.siliconKey) throw new Error('硅基流动 Key 未设置');
-      return {
-        url: 'https://api.siliconflow.cn/v1/chat/completions',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.siliconKey}`
-        },
-        body: {
-          model: this.config.siliconModel,
-          messages: messages,
-          stream: true,
-          temperature: this.config.siliconParams.temperature,
-          max_tokens: this.config.siliconParams.maxTokens
-        }
-      };
     } else if (this.provider === 'custom') {
       if (!this.config.customAI.url || !this.config.customAI.key) {
         throw new Error('自定义 AI URL 或 Key 未设置');
@@ -540,71 +523,6 @@ class AIManager {
       };
     }
     throw new Error('未知的AI提供商');
-  }
-
-  async translate(text, model) {
-    if (!this.config.siliconKey) throw new Error('硅基流动 Key 未设置');
-
-    const messages = [{
-      role: 'system',
-      content: 'You are a professional technical translator. Translate the following code or text to Simplified Chinese. Preserve logic and variable names where appropriate. Only output the translation.'
-    }, {
-      role: 'user',
-      content: text.slice(0, 3000) + (text.length > 3000 ? '\n\n(Truncated)' : '')
-    }];
-
-    const res = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.siliconKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: messages,
-        stream: false
-      })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`翻译API错误 (${res.status}): ${errText}`);
-    }
-
-    const data = await res.json();
-    if (data.choices && data.choices[0]) {
-      return data.choices[0].message.content;
-    }
-    throw new Error('翻译返回格式错误');
-  }
-
-  async generateIntro(repoName, desc, model) {
-    if (!this.config.siliconKey) throw new Error('硅基流动 Key 未设置');
-
-    const prompt = `请简要介绍 GitHub 仓库 "${repoName}"。描述: "${desc || ''}"。请用中文总结它的主要功能和用途。`;
-    const res = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.siliconKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }],
-        stream: false
-      })
-    });
-
-    if (!res.ok) throw new Error(`Intro API错误: ${res.status}`);
-
-    const data = await res.json();
-    if (data.choices && data.choices[0]) {
-      return data.choices[0].message.content;
-    }
-    throw new Error('Intro返回格式错误');
   }
 }
 
@@ -996,6 +914,22 @@ class UIComponents {
   background: rgba(0,0,0,0.25);
   opacity: 0.85;
 }
+.pmk2-tag{
+  display: inline-block;
+  background: rgba(60,160,255,0.2);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
+  margin-right: 6px;
+  margin-top: 6px;
+  border: 1px solid rgba(60,160,255,0.3);
+}
+.pmk2-description{
+  font-size: 12px;
+  opacity: 0.85;
+  margin-top: 6px;
+  line-height: 1.4;
+}
 `;
     document.head.appendChild(style);
   }
@@ -1071,6 +1005,8 @@ class PluginManager {
          id: "${id || 'temp-' + Date.now()}",
          name: "Unknown Plugin",
          version: "0.0.1",
+         description: "",
+         tags: [],
          init: () => {},
          onHook: () => {},
          style: ""
@@ -1153,19 +1089,11 @@ class GitHubPanelCore {
   constructor() {
     this.token = '';
     this.aiProvider = 'github';
-    this.siliconKey = '';
-    this.siliconModel = 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B';
-    this.siliconParams = {
-      temperature: 0.7,
-      maxTokens: 4096
-    };
     this.customAI = {
       url: 'https://api.openai.com/v1/chat/completions',
       key: '',
       model: 'gpt-3.5-turbo'
     };
-    this.sfTranslateEnabled = false;
-    this.sfTranslateModel = 'internlm/internlm2_5-7b-chat';
     this.githubModel = 'gpt-4o';
 
     this.currentOwner = '';
@@ -1201,7 +1129,8 @@ class GitHubPanelCore {
       branch: "main",
       dir: "me/github/插件",
       items: [],
-      lastLoadedAt: 0
+      lastLoadedAt: 0,
+      searchKeyword: ""
     };
 
     this.cacheManager = new CacheManager();
@@ -1216,9 +1145,6 @@ class GitHubPanelCore {
       token: this.token,
       aiProvider: this.aiProvider,
       githubModel: this.githubModel,
-      siliconKey: this.siliconKey,
-      siliconModel: this.siliconModel,
-      siliconParams: this.siliconParams,
       customAI: this.customAI
     };
   }
@@ -1239,16 +1165,6 @@ class GitHubPanelCore {
     this.updateAIConfig();
   }
 
-  setSiliconKey(key) {
-    this.siliconKey = key;
-    this.updateAIConfig();
-  }
-
-  setSiliconTranslator(state, model) {
-    this.sfTranslateEnabled = state === 'on';
-    this.sfTranslateModel = model;
-  }
-
   _revokeObjectUrl() {
     if (this._objectUrlToRevoke) {
       URL.revokeObjectURL(this._objectUrlToRevoke);
@@ -1263,7 +1179,7 @@ class GitHubPanelExtension {
   constructor() {
     this.core = new GitHubPanelCore();
     this.ui = {
-      marketplace: null // Holder for marketplace UI refs
+      marketplace: null
     };
     this.virtualScrollers = new Map();
     this.pluginManager = new PluginManager(this);
@@ -1303,32 +1219,6 @@ class GitHubPanelExtension {
             defaultValue: 'github'
           }
         }
-      }, {
-        opcode: 'setSiliconKey',
-        blockType: Scratch.BlockType.COMMAND,
-        text: '硅基流动 Key 为 [KEY]',
-        arguments: {
-          KEY: {
-            type: Scratch.ArgumentType.STRING,
-            defaultValue: ''
-          }
-        }
-      }, {
-        opcode: 'setSiliconTranslator',
-        blockType: Scratch.BlockType.COMMAND,
-        text: '硅基翻译插件 [STATE] 模型 [MODEL]',
-        arguments: {
-          STATE: {
-            type: Scratch.ArgumentType.STRING,
-            menu: 'onOff',
-            defaultValue: 'off'
-          },
-          MODEL: {
-            type: Scratch.ArgumentType.STRING,
-            menu: 'sfModels',
-            defaultValue: 'internlm/internlm2_5-7b-chat'
-          }
-        }
       }],
       menus: {
         aiProviders: {
@@ -1337,43 +1227,8 @@ class GitHubPanelExtension {
             text: 'GitHub',
             value: 'github'
           }, {
-            text: '硅基流动',
-            value: 'siliconflow'
-          }, {
             text: '自定义',
             value: 'custom'
-          }]
-        },
-        onOff: {
-          acceptReporters: true,
-          items: [{
-            text: '开启',
-            value: 'on'
-          }, {
-            text: '关闭',
-            value: 'off'
-          }]
-        },
-        sfModels: {
-          acceptReporters: true,
-          items: [{
-            text: 'InternLM2.5-7B',
-            value: 'internlm/internlm2_5-7b-chat'
-          }, {
-            text: 'Hunyuan-MT-7B',
-            value: 'tencent/Hunyuan-MT-7B'
-          }, {
-            text: 'GLM-4-9B',
-            value: 'THUDM/glm-4-9b-chat'
-          }, {
-            text: 'Qwen2.5-7B',
-            value: 'Qwen/Qwen2.5-7B-Instruct'
-          }, {
-            text: 'Qwen2.5-Coder',
-            value: 'Qwen/Qwen2.5-Coder-7B-Instruct'
-          }, {
-            text: 'DeepSeek-OCR',
-            value: 'deepseek-ai/DeepSeek-OCR'
           }]
         }
       }
@@ -1393,10 +1248,8 @@ class GitHubPanelExtension {
     this.core._revokeObjectUrl();
     this.core.aiManager.abort();
     this.core._repoCacheAbort = true;
-    if (this.ui.contextMenu) this.ui.contextMenu.style.display = 'none';
-    if (this.ui.aiRewritePanel) this.ui.aiRewritePanel.style.display = 'none';
     if (this.ui.panel) this.ui.panel.style.display = 'none';
-    this._closeMarketplace(); // Also close marketplace if main panel closes (optional, but cleaner)
+    this._closeMarketplace();
     this.virtualScrollers.forEach(vs => vs.destroy());
     this.virtualScrollers.clear();
     this.pluginManager.trigger('ui:hide');
@@ -1411,19 +1264,9 @@ class GitHubPanelExtension {
     this.core.setAIProvider(args.PROVIDER);
   }
 
-  setSiliconKey(args) {
-    this.core.setSiliconKey(String(args.KEY || '').trim());
-  }
-
-  setSiliconTranslator(args) {
-    this.core.setSiliconTranslator(args.STATE, args.MODEL);
-    LoadingManager.setMessage(`硅基翻译: ${this.core.sfTranslateEnabled ? '开' : '关'} (${this.core.sfTranslateModel})`);
-  }
-
   // ==================== UI创建 ====================
 
   _createUI() {
-    // 注入插件集市CSS
     UIComponents.injectMarketplaceCSS();
 
     this.ui.panel = UIComponents.createPanel();
@@ -1504,7 +1347,6 @@ class GitHubPanelExtension {
     this.ui.tabAIBtn = UIComponents.createTabButton('AI');
     this.ui.tabPluginsBtn = UIComponents.createTabButton('🧩 插件');
 
-    // 插件集市按钮 (Native Integration)
     const marketplaceBtn = UIComponents.createWindowButton("插件集市", {
       background: "rgba(160,120,255,0.22)",
       border: "1px solid rgba(160,120,255,0.28)",
@@ -1525,7 +1367,7 @@ class GitHubPanelExtension {
     this.ui.tabs.appendChild(this.ui.tabMyBtn);
     this.ui.tabs.appendChild(this.ui.tabAIBtn);
     this.ui.tabs.appendChild(this.ui.tabPluginsBtn);
-    this.ui.tabs.appendChild(marketplaceBtn); // Add Marketplace button
+    this.ui.tabs.appendChild(marketplaceBtn);
     this.ui.tabs.appendChild(dirSel.el);
 
     this.ui.searchDirSelectWrap = dirSel.el;
@@ -1576,14 +1418,13 @@ class GitHubPanelExtension {
     document.body.appendChild(this.ui.panel);
     this.ui._panelBody = bodyWrap;
 
-    // Initialize Marketplace UI hidden
     this._createMarketplaceUI();
 
     this._bindEvents();
     this.pluginManager.trigger('ui:ready', this.ui);
   }
 
-  // ==================== Marketplace Logic Integration ====================
+  // ==================== Marketplace Logic Integration (Enhanced) ====================
 
   _createMarketplaceUI() {
     if (this.ui.marketplace && this.ui.marketplace.overlay) return;
@@ -1640,12 +1481,26 @@ class GitHubPanelExtension {
     const fBranch = this._createMarketField("Branch", mkState.branch);
     const fDir = this._createMarketField("目录 Path", mkState.dir);
 
+    // 新增搜索框
+    const searchField = document.createElement("div");
+    searchField.className = "pmk2-field";
+    const searchLabel = document.createElement("label");
+    searchLabel.textContent = "🔍 搜索插件";
+    const searchInput = document.createElement("input");
+    searchInput.className = "pmk2-input";
+    searchInput.placeholder = "按名称、简介或标签搜索...";
+    searchInput.value = mkState.searchKeyword || "";
+    searchInput.addEventListener("input", (e) => {
+      this.core.marketplaceState.searchKeyword = e.target.value;
+      this._renderMarketList();
+    });
+    searchField.appendChild(searchLabel);
+    searchField.appendChild(searchInput);
+
     const hint = document.createElement("div");
     hint.className = "pmk2-hint";
     hint.innerHTML = `
-    规则：<span class="pmk2-kbd">只加载 .js</span>，并且<span class="pmk2-kbd">忽略 README.md</span>。<br>
-    安装时会调用扩展自带的“加载插件”流程（会弹出安全确认）。<br>
-    如果仓库不是公开的，或分支不对，会读取失败。
+    安装时会调用扩展自带的"加载插件"流程（会弹出安全确认）。
   `;
 
     const status = document.createElement("div");
@@ -1664,6 +1519,7 @@ class GitHubPanelExtension {
     left.appendChild(fRepo.wrap);
     left.appendChild(fBranch.wrap);
     left.appendChild(fDir.wrap);
+    left.appendChild(searchField);
     left.appendChild(hint);
     left.appendChild(status);
     left.appendChild(btnSaveCfg);
@@ -1690,7 +1546,8 @@ class GitHubPanelExtension {
         owner: fOwner.input,
         repo: fRepo.input,
         branch: fBranch.input,
-        dir: fDir.input
+        dir: fDir.input,
+        search: searchInput
       }
     };
 
@@ -1832,15 +1689,90 @@ class GitHubPanelExtension {
         })
         .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
-      this.core.marketplaceState.items = jsFiles;
+      // 基础 items 列表，稍后增强元数据
+      const baseItems = jsFiles.map(file => ({
+        ...file,
+        metadata: {
+          description: "",
+          tags: []
+        }
+      }));
+
+      this.core.marketplaceState.items = baseItems;
       this.core.marketplaceState.lastLoadedAt = Date.now();
 
+      // 先渲染空元数据列表
       this._renderMarketList();
-      this._setMarketplaceStatus(`已加载：${jsFiles.length} 个 .js（已忽略 README.md）`);
+
+      // 异步加载每个插件的元数据
+      await this._enhanceItemsWithMetadata(baseItems, owner, repo, branch);
+      
+      this._renderMarketList();
+      this._setMarketplaceStatus(`已加载：${baseItems.length} 个 .js（已忽略 README.md）`);
     } catch (e) {
       this._renderMarketError(e);
       this._setMarketplaceStatus(`加载失败：${e.message || e}`);
     }
+  }
+
+  // 提取插件元数据
+  _extractPluginMetadata(code) {
+    let description = "";
+    let tags = [];
+    
+    // 提取 plugin.description
+    const descMatch = code.match(/plugin\.description\s*=\s*["']([^"']*)["']/);
+    if (descMatch) {
+      description = descMatch[1];
+    }
+    
+    // 提取 plugin.tags = ["tag1", "tag2", ...]
+    const tagsMatch = code.match(/plugin\.tags\s*=\s*\[(.*?)\]/s);
+    if (tagsMatch) {
+      const tagsStr = tagsMatch[1];
+      const tagRegex = /["']([^"']*)["']/g;
+      let tagMatch;
+      while ((tagMatch = tagRegex.exec(tagsStr)) !== null) {
+        tags.push(tagMatch[1]);
+      }
+    }
+    
+    return { description, tags };
+  }
+
+  async _enhanceItemsWithMetadata(items, owner, repo, branch) {
+    const maxConcurrent = 3;
+    let index = 0;
+    
+    const processNext = async () => {
+      while (index < items.length) {
+        const i = index++;
+        const item = items[i];
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
+        
+        try {
+          const res = await fetch(rawUrl);
+          if (res.ok) {
+            const code = await res.text();
+            const metadata = this._extractPluginMetadata(code);
+            item.metadata = metadata;
+          }
+        } catch (e) {
+          console.warn(`Failed to fetch metadata for ${item.name}:`, e);
+        }
+        
+        // 每获取一个就刷新一次显示，让用户看到进度
+        if (i % 3 === 0 || i === items.length - 1) {
+          this._renderMarketList();
+        }
+      }
+    };
+    
+    const workers = [];
+    for (let i = 0; i < maxConcurrent; i++) {
+      workers.push(processNext());
+    }
+    await Promise.all(workers);
   }
 
   _renderMarketListLoading() {
@@ -1871,11 +1803,24 @@ class GitHubPanelExtension {
       repo,
       branch
     } = this.core.marketplaceState;
-    const items = this.core.marketplaceState.items || [];
+    let items = this.core.marketplaceState.items || [];
+    
+    // 应用搜索过滤
+    const searchKeyword = (this.core.marketplaceState.searchKeyword || "").toLowerCase().trim();
+    if (searchKeyword) {
+      items = items.filter(item => {
+        const name = (item.name || "").toLowerCase();
+        const description = (item.metadata?.description || "").toLowerCase();
+        const tags = (item.metadata?.tags || []).some(tag => tag.toLowerCase().includes(searchKeyword));
+        return name.includes(searchKeyword) || description.includes(searchKeyword) || tags;
+      });
+    }
+    
     list.innerHTML = "";
 
     if (items.length === 0) {
-      list.innerHTML = `<div class="pmk2-empty">目录中没有可用的 .js 插件文件。</div>`;
+      const msg = searchKeyword ? `没有找到匹配 "${searchKeyword}" 的插件。` : "目录中没有可用的 .js 插件文件。";
+      list.innerHTML = `<div class="pmk2-empty">${msg}</div>`;
       return;
     }
 
@@ -1899,6 +1844,27 @@ class GitHubPanelExtension {
 
       textPart.appendChild(name);
       textPart.appendChild(meta);
+      
+      // 添加简介
+      if (it.metadata && it.metadata.description) {
+        const descDiv = document.createElement("div");
+        descDiv.className = "pmk2-description";
+        descDiv.textContent = it.metadata.description;
+        textPart.appendChild(descDiv);
+      }
+      
+      // 添加标签
+      if (it.metadata && it.metadata.tags && it.metadata.tags.length > 0) {
+        const tagsDiv = document.createElement("div");
+        tagsDiv.style.marginTop = "6px";
+        it.metadata.tags.forEach(tag => {
+          const tagSpan = document.createElement("span");
+          tagSpan.className = "pmk2-tag";
+          tagSpan.textContent = tag;
+          tagsDiv.appendChild(tagSpan);
+        });
+        textPart.appendChild(tagsDiv);
+      }
 
       const btns = document.createElement("div");
       btns.className = "pmk2-itembtns";
@@ -2075,7 +2041,15 @@ class GitHubPanelExtension {
       row.style.alignItems = 'center';
 
       const info = document.createElement('div');
-      info.innerHTML = `<b>${p.name}</b> <span style="font-size:11px;opacity:0.7">v${p.version}</span><br><span style="font-size:11px;opacity:0.5">ID: ${id}</span>`;
+      let infoHtml = `<b>${p.name}</b> <span style="font-size:11px;opacity:0.7">v${p.version}</span>`;
+      if (p.description) {
+        infoHtml += `<br><span style="font-size:11px;opacity:0.6">${p.description}</span>`;
+      }
+      if (p.tags && p.tags.length) {
+        infoHtml += `<br><span style="font-size:10px;opacity:0.5">🏷️ ${p.tags.join(', ')}</span>`;
+      }
+      infoHtml += `<br><span style="font-size:10px;opacity:0.4">ID: ${id}</span>`;
+      info.innerHTML = infoHtml;
 
       const btnBox = document.createElement('div');
       btnBox.style.display = 'flex';
@@ -2496,10 +2470,9 @@ class GitHubPanelExtension {
       marginBottom: '8px',
       alignItems: 'center'
     });
-    const provSelWrap = Utils.select(['github', 'siliconflow', 'custom'], 'AI 提供商');
+    const provSelWrap = Utils.select(['github', 'custom'], 'AI 提供商');
     Utils.applySelectLabels(provSelWrap.sel, {
       github: 'GitHub (默认)',
-      siliconflow: '硅基流动',
       custom: '自定义'
     });
     provSelWrap.sel.value = this.core.aiProvider;
@@ -2837,59 +2810,6 @@ class GitHubPanelExtension {
     acts.appendChild(enterBtn);
     acts.appendChild(webBtn);
 
-    if (this.core.sfTranslateEnabled) {
-      const transBtn = UIComponents.createWindowButton('翻译', {
-        background: 'rgba(60,160,255,0.2)'
-      });
-      transBtn.onclick = () => {
-        transBtn.textContent = '翻译中...';
-        transBtn.disabled = true;
-        const transPlace = document.createElement('div');
-        transPlace.style.color = '#8f8';
-        transPlace.style.fontSize = '12px';
-        transPlace.style.marginTop = '4px';
-        desc.appendChild(transPlace);
-        this.core.aiManager.translate(item.description || 'No description', this.core.sfTranslateModel)
-          .then(result => {
-            transPlace.textContent = result;
-            transBtn.textContent = '已翻译';
-          })
-          .catch(err => {
-            transPlace.textContent = '翻译失败: ' + err.message;
-            transBtn.textContent = '翻译';
-            transBtn.disabled = false;
-          });
-      };
-      acts.appendChild(transBtn);
-    }
-
-    const introBtn = UIComponents.createWindowButton('硅基AI介绍', {
-      background: 'rgba(255,100,200,0.2)'
-    });
-    introBtn.onclick = () => {
-      introBtn.textContent = '生成中...';
-      introBtn.disabled = true;
-      const introPlace = document.createElement('div');
-      introPlace.style.color = '#f8f';
-      introPlace.style.fontSize = '12px';
-      introPlace.style.marginTop = '4px';
-      introPlace.style.whiteSpace = 'pre-wrap';
-      desc.appendChild(introPlace);
-
-      this.core.aiManager.generateIntro(item.full_name, item.description, 'internlm/internlm2_5-7b-chat')
-        .then(result => {
-          introPlace.textContent = result;
-          introBtn.textContent = '硅基AI介绍';
-          introBtn.disabled = false;
-        })
-        .catch(err => {
-          introPlace.textContent = '生成失败: ' + err.message;
-          introBtn.textContent = '硅基AI介绍';
-          introBtn.disabled = false;
-        });
-    };
-    acts.appendChild(introBtn);
-
     row.appendChild(top);
     row.appendChild(desc);
     row.appendChild(acts);
@@ -3206,11 +3126,6 @@ class GitHubPanelExtension {
       const toAI = UIComponents.createWindowButton('发送到AI');
       toAI.disabled = true;
 
-      const translateBtn = UIComponents.createWindowButton('硅基翻译');
-      translateBtn.style.background = this.core.sfTranslateEnabled ? 'rgba(60,160,255,0.3)' : 'rgba(255,255,255,0.05)';
-      translateBtn.style.display = this.core.sfTranslateEnabled ? 'inline-block' : 'none';
-      translateBtn.disabled = true;
-
       const editBtn = UIComponents.createWindowButton('修改模式', {
         background: 'rgba(255, 165, 0, 0.3)'
       });
@@ -3237,7 +3152,6 @@ class GitHubPanelExtension {
       bar.appendChild(dl);
       bar.appendChild(del);
       bar.appendChild(toAI);
-      bar.appendChild(translateBtn);
       bar.appendChild(mdToggleBtn);
       bar.appendChild(heatBtn);
       bar.appendChild(editBtn);
@@ -3284,44 +3198,8 @@ class GitHubPanelExtension {
         resize: 'none',
         padding: '5px'
       });
-      textarea.addEventListener('contextmenu', (e) => {
-        this.ui.editorTextarea = textarea;
-        this._handleEditorContextMenu(e)
-      });
-      let touchTimer;
-      textarea.addEventListener('touchstart', (e) => {
-        touchTimer = setTimeout(() => {
-          this.ui.editorTextarea = textarea;
-          this._handleEditorContextMenu(e.touches[0])
-        }, 800);
-      });
-      textarea.addEventListener('touchend', () => clearTimeout(touchTimer));
       contentBox.appendChild(textarea);
       this.ui.editorTextarea = textarea;
-
-      const transPanel = document.createElement('div');
-      Object.assign(transPanel.style, {
-        width: '0',
-        display: 'none',
-        borderLeft: '1px solid #555',
-        paddingLeft: '10px',
-        flexDirection: 'column',
-        overflowY: 'auto',
-        transition: 'width 0.3s',
-        flexShrink: '0'
-      });
-      const transTitle = document.createElement('div');
-      transTitle.innerHTML = `<b>翻译结果</b>`;
-      const transContent = document.createElement('pre');
-      Object.assign(transContent.style, {
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        fontSize: '13px',
-        color: '#8f8'
-      });
-      transPanel.appendChild(transTitle);
-      transPanel.appendChild(transContent);
-      contentBox.appendChild(transPanel);
 
       mainContainer.appendChild(contentBox);
       this.ui.mainArea.appendChild(mainContainer);
@@ -3331,9 +3209,7 @@ class GitHubPanelExtension {
         textarea,
         saveBtn,
         editBtn,
-        pre,
-        transPanel,
-        transContent
+        pre
       };
 
       const ext = file.name.split('.').pop().toLowerCase();
@@ -3385,32 +3261,6 @@ class GitHubPanelExtension {
         this._renderAIOutput();
         this._renderAICacheInfo();
       };
-
-      if (this.core.sfTranslateEnabled) {
-        translateBtn.disabled = false;
-        translateBtn.onclick = async () => {
-          if (transPanel.style.display === 'none') {
-            transPanel.style.display = 'flex';
-            transPanel.style.width = '45%';
-            transContent.textContent = '正在翻译 (Translating)...';
-            translateBtn.textContent = '翻译中...';
-            translateBtn.disabled = true;
-
-            try {
-              const result = await this.core.aiManager.translate(text, this.core.sfTranslateModel);
-              transContent.textContent = result;
-            } catch (err) {
-              transContent.textContent = '翻译失败: ' + err.message;
-            } finally {
-              translateBtn.textContent = '硅基翻译';
-              translateBtn.disabled = false;
-            }
-          } else {
-            transPanel.style.display = 'none';
-            transPanel.style.width = '0';
-          }
-        };
-      }
 
       LoadingManager.setMessage(`Read ${file.size} bytes.`);
       this.pluginManager.trigger('file:open', {
@@ -3757,68 +3607,6 @@ class GitHubPanelExtension {
       r1.appendChild(modelSel.el);
       r1.appendChild(customInp);
       container.appendChild(r1);
-    } else if (this.core.aiProvider === 'siliconflow') {
-      const r1 = document.createElement('div');
-      Object.assign(r1.style, rowStyle);
-      const keyInp = Utils.input('API Key (sk-...)');
-      keyInp.value = this.core.siliconKey;
-      keyInp.type = 'password';
-      keyInp.style.flex = '1';
-      keyInp.onchange = () => {
-        this.core.siliconKey = keyInp.value;
-        this.updateAIConfig();
-      };
-      const sfModels = ['deepseek-ai/DeepSeek-R1-0528-Qwen3-8B', 'Qwen/Qwen2.5-Coder-7B-Instruct', 'THUDM/glm-4-9b-chat', 'internlm/internlm2_5-7b-chat', 'custom'];
-      const modelSel = Utils.select(sfModels, '模型');
-      modelSel.sel.value = sfModels.includes(this.core.siliconModel) ? this.core.siliconModel : 'custom';
-      const customInp = Utils.input('自定义模型 ID');
-      customInp.style.flex = '1';
-      customInp.style.display = modelSel.sel.value === 'custom' ? 'block' : 'none';
-      if (modelSel.sel.value === 'custom') customInp.value = this.core.siliconModel;
-      modelSel.sel.onchange = () => {
-        if (modelSel.sel.value === 'custom') {
-          customInp.style.display = 'block';
-          this.core.siliconModel = customInp.value;
-        } else {
-          customInp.style.display = 'none';
-          this.core.siliconModel = modelSel.sel.value;
-        }
-      };
-      customInp.oninput = () => {
-        this.core.siliconModel = customInp.value;
-      };
-      r1.appendChild(keyInp);
-      r1.appendChild(modelSel.el);
-      r1.appendChild(customInp);
-      container.appendChild(r1);
-
-      const r2 = document.createElement('div');
-      Object.assign(r2.style, rowStyle);
-      const createSlider = (label, min, max, step, val, setter) => {
-        const d = document.createElement('div');
-        d.style.fontSize = '12px';
-        d.style.display = 'flex';
-        d.style.alignItems = 'center';
-        d.style.gap = '4px';
-        const l = document.createElement('span');
-        l.textContent = `${label}: ${val}`;
-        const s = document.createElement('input');
-        s.type = 'range';
-        s.min = min;
-        s.max = max;
-        s.step = step;
-        s.value = val;
-        s.oninput = () => {
-          l.textContent = `${label}: ${s.value}`;
-          setter(Number(s.value));
-        };
-        d.appendChild(l);
-        d.appendChild(s);
-        return d;
-      };
-      r2.appendChild(createSlider('Temp', 0, 2, 0.1, this.core.siliconParams.temperature, v => this.core.siliconParams.temperature = v));
-      r2.appendChild(createSlider('MaxTokens', 256, 8192, 256, this.core.siliconParams.maxTokens, v => this.core.siliconParams.maxTokens = v));
-      container.appendChild(r2);
     } else if (this.core.aiProvider === 'custom') {
       const r1 = document.createElement('div');
       Object.assign(r1.style, rowStyle);
@@ -4139,246 +3927,7 @@ class GitHubPanelExtension {
     document.body.appendChild(overlay);
   }
 
-  // ==================== AI重写面板 ====================
-
-  _handleEditorContextMenu(e) {
-    if (!this.core.isEditMode || !this.ui.editorTextarea) return;
-
-    const start = this.ui.editorTextarea.selectionStart;
-    const end = this.ui.editorTextarea.selectionEnd;
-    if (start === end) return;
-
-    e.preventDefault();
-    this.core.lastSelection = {
-      start,
-      end
-    };
-
-    if (!this.ui.contextMenu) {
-      this.ui.contextMenu = document.createElement('div');
-      Object.assign(this.ui.contextMenu.style, {
-        position: 'fixed',
-        background: '#333',
-        border: '1px solid #555',
-        borderRadius: '4px',
-        padding: '5px',
-        zIndex: 100001,
-        cursor: 'pointer',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.5)'
-      });
-
-      const item = document.createElement('div');
-      item.textContent = '✨ AI 区域改写';
-      item.style.padding = '5px 10px';
-      item.onmouseover = () => item.style.background = '#444';
-      item.onmouseout = () => item.style.background = 'transparent';
-      item.onclick = () => {
-        this.ui.contextMenu.style.display = 'none';
-        this._showAIRewritePanel();
-      };
-
-      this.ui.contextMenu.appendChild(item);
-      document.body.appendChild(this.ui.contextMenu);
-    }
-
-    const x = e.clientX || e.pageX;
-    const y = e.clientY || e.pageY;
-    this.ui.contextMenu.style.left = x + 'px';
-    this.ui.contextMenu.style.top = y + 'px';
-    this.ui.contextMenu.style.display = 'block';
-
-    const hide = () => {
-      this.ui.contextMenu.style.display = 'none';
-      document.removeEventListener('click', hide);
-    };
-    setTimeout(() => document.addEventListener('click', hide), 100);
-  }
-
-  _showAIRewritePanel() {
-    if (this.ui.aiRewritePanel) {
-      this.ui.aiRewritePanel.style.display = 'flex';
-      return;
-    }
-
-    const panel = document.createElement('div');
-    Object.assign(panel.style, {
-      position: 'fixed',
-      right: '0',
-      top: '0',
-      width: '350px',
-      height: '100%',
-      background: '#222',
-      borderLeft: '1px solid #444',
-      zIndex: 100002,
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '10px',
-      boxSizing: 'border-box',
-      boxShadow: '-5px 0 15px rgba(0,0,0,0.5)'
-    });
-
-    const header = document.createElement('div');
-    header.innerHTML = '<b>AI 代码改写</b>';
-    header.style.marginBottom = '10px';
-    header.style.display = 'flex';
-    header.style.justifyContent = 'space-between';
-
-    const closeBtn = UIComponents.createWindowButton('×', {
-      padding: '2px 8px'
-    });
-    closeBtn.onclick = () => {
-      panel.style.display = 'none';
-    };
-    header.appendChild(closeBtn);
-    panel.appendChild(header);
-
-    const provSel = Utils.select(['github', 'siliconflow'], 'AI 提供商');
-    provSel.sel.value = this.core.aiProvider === 'custom' ? 'github' : this.core.aiProvider;
-    panel.appendChild(provSel.el);
-
-    const modelInp = Utils.input('模型名称 (e.g. gpt-4o)');
-    modelInp.value = provSel.sel.value === 'github' ? 'gpt-4o' : 'deepseek-ai/DeepSeek-V3';
-    modelInp.style.marginTop = '5px';
-    panel.appendChild(modelInp);
-
-    provSel.sel.onchange = () => {
-      modelInp.value = provSel.sel.value === 'github' ? 'gpt-4o' : 'deepseek-ai/DeepSeek-V3';
-    };
-
-    const reqInp = document.createElement('textarea');
-    reqInp.placeholder = '输入改写要求...';
-    Object.assign(reqInp.style, {
-      width: '100%',
-      height: '60px',
-      marginTop: '10px',
-      background: '#333',
-      color: '#fff',
-      border: '1px solid #555'
-    });
-    panel.appendChild(reqInp);
-
-    const genBtn = UIComponents.createWindowButton('生成改写 (Generate)', {
-      marginTop: '10px',
-      width: '100%',
-      background: '#2a8'
-    });
-    panel.appendChild(genBtn);
-
-    const outWrap = document.createElement('div');
-    Object.assign(outWrap.style, {
-      flex: '1',
-      marginTop: '10px',
-      background: '#111',
-      border: '1px solid #444',
-      padding: '5px',
-      overflowY: 'auto',
-      fontSize: '12px',
-      fontFamily: 'monospace',
-      whiteSpace: 'pre-wrap',
-      color: '#fff'
-    });
-    panel.appendChild(outWrap);
-
-    const actionRow = document.createElement('div');
-    Object.assign(actionRow.style, {
-      display: 'flex',
-      gap: '5px',
-      flexWrap: 'wrap',
-      marginTop: '10px'
-    });
-
-    const applyBtn = UIComponents.createWindowButton('应用替换 (Cache)', {
-      flex: '1',
-      background: '#d58'
-    });
-
-    const copyAllBtn = UIComponents.createWindowButton('复制完整代码', {
-      flex: '1'
-    });
-    copyAllBtn.onclick = () => {
-      Utils.copyToClipboard(this.ui.editorTextarea.value);
-    };
-
-    const dlBtn = UIComponents.createWindowButton('下载仓库(Zip)', {
-      flex: '1'
-    });
-    dlBtn.onclick = () => {
-      this._downloadRepoZip();
-    };
-
-    const confirmBtn = UIComponents.createWindowButton('确认修改并上传', {
-      width: '100%',
-      marginTop: '5px',
-      background: '#28a745'
-    });
-    confirmBtn.onclick = () => {
-      if (this.ui.fileViewRefs && this.ui.fileViewRefs.saveBtn) {
-        this.ui.fileViewRefs.saveBtn.click();
-      }
-    };
-
-    actionRow.appendChild(applyBtn);
-    actionRow.appendChild(copyAllBtn);
-    actionRow.appendChild(dlBtn);
-    panel.appendChild(actionRow);
-    panel.appendChild(confirmBtn);
-    document.body.appendChild(panel);
-    this.ui.aiRewritePanel = panel;
-
-    let generatedCode = '';
-    genBtn.onclick = async () => {
-      outWrap.textContent = '';
-      generatedCode = '';
-      const selectedText = this.ui.editorTextarea.value.substring(
-        this.core.lastSelection.start,
-        this.core.lastSelection.end
-      );
-      const prompt = `Rewrite the following code based on the requirement.\n\nCode:\n${selectedText}\n\nRequirement:\n${reqInp.value}\n\nOutput ONLY the rewritten code, no markdown block markers if possible.`;
-
-      const oldProv = this.core.aiProvider;
-      const oldModel = this.core.aiProvider === 'github' ? this.core.githubModel : this.core.siliconModel;
-
-      this.core.aiProvider = provSel.sel.value;
-      if (this.core.aiProvider === 'github') {
-        this.core.githubModel = modelInp.value;
-      } else {
-        this.core.siliconModel = modelInp.value;
-      }
-      this.updateAIConfig();
-
-      try {
-        await this.core.aiManager.stream([{
-          role: 'user',
-          content: prompt
-        }], (chunk) => {
-          generatedCode += chunk;
-          outWrap.textContent = generatedCode;
-          outWrap.scrollTop = outWrap.scrollHeight;
-        });
-      } catch (e) {
-        outWrap.textContent += `\nError: ${e.message}`;
-      } finally {
-        this.core.aiProvider = oldProv;
-        if (oldProv === 'github') {
-          this.core.githubModel = oldModel;
-        } else {
-          this.core.siliconModel = oldModel;
-        }
-        this.updateAIConfig();
-      }
-    };
-
-    applyBtn.onclick = () => {
-      if (!generatedCode) return alert('请先生成代码');
-      const fullText = this.ui.editorTextarea.value;
-      const before = fullText.substring(0, this.core.lastSelection.start);
-      const after = fullText.substring(this.core.lastSelection.end);
-      let cleanCode = generatedCode.replace(/^```\w*\n/, '').replace(/\n```$/, '');
-      this.ui.editorTextarea.value = before + cleanCode + after;
-      this.core.lastSelection.end = this.core.lastSelection.start + cleanCode.length;
-      alert('已替换编辑器内容 (未上传)');
-    };
-  }
+  // ==================== 其他功能 ====================
 
   _downloadRepoZip() {
     if (!this.core.currentOwner || !this.core.currentRepo) {
@@ -4388,8 +3937,6 @@ class GitHubPanelExtension {
     const url = `https://api.github.com/repos/${this.core.currentOwner}/${this.core.currentRepo}/zipball/${this.core.currentBranch}`;
     window.open(url, '_blank');
   }
-
-  // ==================== 其他功能 ====================
 
   async _showRepoHistory() {
     LoadingManager.setMessage('Loading commits...');
@@ -5074,7 +4621,7 @@ class GitHubPanelExtension {
       saveBtn.style.display = 'inline-block';
       editBtn.textContent = '取消修改';
       editBtn.style.background = '#666';
-      LoadingManager.setMessage('进入修改模式。右键选中区域可使用 AI 改写。');
+      LoadingManager.setMessage('进入修改模式。');
     } else {
       preWrap.style.display = 'block';
       textarea.style.display = 'none';
