@@ -1,15 +1,11 @@
-// ========== 插件：仓库 About API 悬浮窗 (Issues 强化版) ==========
-// 按钮：〉 展开，〈 收回
-// 悬浮窗可拖动，适配移动端
-// 点击条目不跳转 GitHub，而是在悬浮窗内用 GitHub API 展开显示
-// 强化 Issues 面板：展示无截断的完整详情并支持【加载更多】分页
 
-plugin.id = "plugin.repo.about.float.window.api.issues.detail";
-plugin.name = "仓库 About API 悬浮窗 (Issues 强化版)";
+
+plugin.id = "repo.about";
+plugin.name = "仓库 About API 悬浮窗 ";
 plugin.version = "1.2.0";
 plugin.author = "ChatGPT";
-plugin.description = "浏览仓库时左上角显示按钮，点击弹出可拖动悬浮窗，通过 GitHub API 显示 About、Readme、License、Activity、Stars、Forks、Contributors、Languages、Releases、Deployments 以及强化后的 Issues 详细面板。";
-plugin.tags = ["about", "repo", "float", "window", "api", "github", "browse", "issues"];
+plugin.description = "浏览仓库时左上角显示按钮，点击弹出可拖动悬浮窗，通过 GitHub API 显示 About、Readme、License、Activity、Stars、Forks、Contributors、Languages、Releases、Deployments.注:信息显示不全";
+plugin.tags = ["about the repo"];
 
 plugin.style = `
 .ghp-float-btn {
