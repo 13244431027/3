@@ -1,6 +1,6 @@
 >**此文档为AI自动生成**    
->[插件API仓库](me/github/插件)
->
+>[插件API仓库](me/github/插件)    
+>[免责声明](me/github/插件/免责声明.md)
 # 1. 插件系统概览
 
 GitHub 面板 Pro+ 内置了一个插件系统，由 `PluginManager` 管理。
