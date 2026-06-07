@@ -1,6 +1,5 @@
 // newline-panel.js - TurboWarp Extension v2
-// 功能：编辑变量 + 列表（列表元素独立框、自动高度、桌面拖拽 + 移动端长按拖动）
-// 新增：面板可拖动、可最小化（移动端适配：底部抽屉式最小化条、拖动标题栏）
+
 (function (Scratch) {
   'use strict';
 
