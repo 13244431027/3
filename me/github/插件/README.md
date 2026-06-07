@@ -1,6 +1,7 @@
 >**此文档为AI自动生成**    
 >[插件API仓库](me/github/插件)    
 >[免责声明](me/github/插件/免责声明.md)
+>[插件合并工具](https://13244431027.github.io/3/me/github/index.html)
 # 1. 插件系统概览
 
 GitHub 面板 Pro+ 内置了一个插件系统，由 `PluginManager` 管理。
