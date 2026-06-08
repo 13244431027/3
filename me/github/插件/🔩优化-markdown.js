@@ -1,22 +1,23 @@
-// ========== 插件：Markdown 优化解析（极速请求）==========
-// 功能：
+
 // 1. Markdown 使用 marked + DOMPurify 渲染
 // 2. Markdown 图片相对路径自动补全 raw.githubusercontent.com
 // 3. Markdown 普通链接自动补全 github.com/.../blob/...
 // 4. HTML 图片标签 <img src="assets/a.png"> 自动补全 raw 链接
 // 5. HTML 跳转 <a href="docs/a.md"> 自动补全 blob 链接
-// 6. 文件夹 README 自动预览修复
-// 7. 表格纯灰色，无白色/斑马纹
+// 6. 文件夹 README 自动预览
+// 7. 表格纯灰色
 // 8. AI 输出 Markdown 预览
 // 9. 支持 highlight.js / KaTeX / Mermaid 按需加载
 // 10. 优化 `行内代码` 自动换行问题，代码块横向滚动
+// 11. 右侧标题树目录 
+// 12. 目录面板大小与 GitHub 面板主内容区自动对齐
 
 plugin.id = "plugin.markdown.enhanced.fast";
 plugin.name = "Markdown 优化解析（极速请求）";
-plugin.version = "1.3.7";
-plugin.author = "ChatGPT";
-plugin.description = ".md / .markdown / README 预览优化，支持 Markdown 与 HTML 图片/链接自动补全，修复行内代码换行。";
-plugin.tags = ["markdown优化", "推荐", "marked", "ai", "md", "markdown", "图片路径", "链接补全", "html-img", "代码不换行"];
+plugin.version = "1.3.9";
+plugin.author = "ChatGPT&gemini &deepseek&yuan";
+plugin.description = ".md / .markdown / README 预览优化，支持图片/链接补全、AI Markdown 预览、标题树目录、面板自适应。";
+plugin.tags = ["markdown优化", "推荐", "marked"];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
@@ -64,11 +65,14 @@ plugin.init = (ctx) => {
 
     observer: null,
     enhanceScheduled: false,
-    preconnectDone: false
+    preconnectDone: false,
+    tocResizeHandler: null,
+    resizeObserver: null
   };
 
   plugin._injectPanelThemeCss();
   plugin._ensureInjectedButton();
+  plugin._installPanelSizeSync();   
   plugin._tryAutoInstall();
 };
 
@@ -102,8 +106,8 @@ plugin._ensureInjectedButton = () => {
         await plugin._install(false);
 
         alert(plugin._state.ok
-          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。\n`行内代码` 不自动换行已优化。"
-          : `启用失败（已回退）：${plugin._state.failReason || "未知原因"}`);
+          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。\n`行内代码` 不自动换行已优化。\n右侧目录已启用。"
+          : `启用失败（已回退:刷新网页3次）：${plugin._state.failReason || "未知原因"}`);
 
         return;
       }
@@ -1434,6 +1438,16 @@ plugin._enhanceOne = async (root) => {
   if (window.mermaid && typeof window.mermaid.render === "function") {
     await plugin._renderMermaidIn(root);
   }
+
+  // 标题树目录生成
+  try {
+    plugin._buildHeadingToc(root);
+  } catch (e) {
+    console.warn("[MDX TOC] build failed:", e);
+  }
+
+  // 同步目录面板大小
+  plugin._syncTocPanelSize();
 };
 
 plugin._renderMermaidIn = async (root) => {
@@ -1462,5 +1476,485 @@ plugin._renderMermaidIn = async (root) => {
 
       (block.closest("pre") || block).replaceWith(container);
     } catch {}
+  }
+};
+
+// ================= 标题树目录 =================
+
+plugin._injectHeadingTocCss = () => {
+  try {
+    const old = document.getElementById("mdx-heading-toc-css");
+    if (old) old.remove();
+  } catch {}
+
+  const style = document.createElement("style");
+  style.id = "mdx-heading-toc-css";
+
+  style.textContent = `
+/* ================= 右侧标题树目录 ================= */
+
+.mdx-enhanced-root.mdx-has-toc {
+  position: relative;
+}
+
+.mdx-toc-panel {
+  float: right;
+  width: 230px;
+  max-width: 42%;
+  margin: 0 0 12px 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(0,0,0,0.30);
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  color: rgba(255,255,255,0.9);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.mdx-toc-panel.mdx-toc-sticky {
+  position: sticky;
+  top: 8px;
+}
+
+.mdx-toc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  user-select: none;
+}
+
+.mdx-toc-title {
+  font-weight: 800;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mdx-toc-count {
+  opacity: 0.62;
+  font-size: 11px;
+}
+
+.mdx-toc-min-btn {
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  border-radius: 7px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mdx-toc-min-btn:hover {
+  background: rgba(255,255,255,0.16);
+}
+
+.mdx-toc-body {
+  padding: 7px 6px 8px 6px;
+}
+
+.mdx-toc-panel.mdx-toc-scroll .mdx-toc-body {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.mdx-toc-panel.mdx-toc-minimized {
+  width: 118px;
+}
+
+.mdx-toc-panel.mdx-toc-minimized .mdx-toc-body,
+.mdx-toc-panel.mdx-toc-minimized .mdx-toc-count {
+  display: none;
+}
+
+.mdx-toc-tree,
+.mdx-toc-tree ul {
+  list-style: none !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+}
+
+.mdx-toc-tree ul {
+  padding-left: 12px !important;
+  border-left: 1px dashed rgba(255,255,255,0.12);
+  margin-left: 6px !important;
+}
+
+.mdx-toc-node {
+  margin: 2px 0;
+}
+
+.mdx-toc-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 22px;
+  border-radius: 7px;
+  padding: 2px 4px;
+}
+
+.mdx-toc-row:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.mdx-toc-toggle {
+  width: 14px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  opacity: 0.75;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.mdx-toc-toggle.mdx-toc-empty {
+  opacity: 0.18;
+  cursor: default;
+}
+
+.mdx-toc-link {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  color: rgba(255,255,255,0.86) !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mdx-toc-link:hover {
+  color: #9cf !important;
+}
+
+.mdx-toc-node.mdx-toc-collapsed > ul {
+  display: none !important;
+}
+
+.mdx-toc-node.mdx-toc-collapsed > .mdx-toc-row > .mdx-toc-toggle {
+  transform: rotate(-90deg);
+}
+
+.mdx-toc-level-1 > .mdx-toc-row .mdx-toc-link {
+  font-weight: 800;
+}
+
+.mdx-toc-level-2 > .mdx-toc-row .mdx-toc-link {
+  font-weight: 700;
+}
+
+.mdx-toc-level-3 > .mdx-toc-row .mdx-toc-link {
+  opacity: 0.92;
+}
+
+.mdx-toc-level-4 > .mdx-toc-row .mdx-toc-link,
+.mdx-toc-level-5 > .mdx-toc-row .mdx-toc-link,
+.mdx-toc-level-6 > .mdx-toc-row .mdx-toc-link {
+  opacity: 0.82;
+}
+
+@media (max-width: 760px) {
+  .mdx-toc-panel {
+    float: none;
+    width: auto;
+    max-width: 100%;
+    margin: 0 0 12px 0;
+    position: relative !important;
+    top: auto !important;
+  }
+}
+`.trim();
+
+  document.head.appendChild(style);
+};
+
+plugin._slugForHeading = (text, index) => {
+  const base = String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")
+    .replace(/[`~!@#$%^&*()+=[\]{};:'",.<>/?\\|]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return `mdx-heading-${base || "section"}-${index}`;
+};
+
+plugin._collectHeadings = (root) => {
+  const all = Array.from(
+    root.querySelectorAll("h1,h2,h3,h4,h5,h6")
+  );
+
+  return all
+    .filter(h => {
+      if (!h) return false;
+      if (h.closest(".mdx-toc-panel")) return false;
+
+      const text = String(h.textContent || "").trim();
+      return !!text;
+    })
+    .map((h, i) => {
+      const level = Number(h.tagName.slice(1)) || 1;
+
+      if (!h.id) {
+        h.id = plugin._slugForHeading(h.textContent, i);
+      }
+
+      try {
+        h.style.scrollMarginTop = "14px";
+      } catch {}
+
+      return {
+        el: h,
+        id: h.id,
+        text: String(h.textContent || "").trim(),
+        level
+      };
+    });
+};
+
+plugin._buildHeadingTree = (headings) => {
+  const root = {
+    level: 0,
+    children: []
+  };
+
+  const stack = [root];
+
+  for (const h of headings) {
+    const node = {
+      ...h,
+      children: []
+    };
+
+    while (
+      stack.length > 1 &&
+      stack[stack.length - 1].level >= node.level
+    ) {
+      stack.pop();
+    }
+
+    stack[stack.length - 1].children.push(node);
+    stack.push(node);
+  }
+
+  return root.children;
+};
+
+plugin._buildHeadingToc = (root) => {
+  if (!root) return;
+
+  try {
+    if (!root.classList || !root.classList.contains("mdx-enhanced-root")) {
+      return;
+    }
+  } catch {
+    return;
+  }
+
+  if (root.dataset._mdxTocDone === "1") return;
+
+  const headings = plugin._collectHeadings(root);
+
+  if (!headings || headings.length < 2) {
+    root.dataset._mdxTocDone = "1";
+    return;
+  }
+
+  root.dataset._mdxTocDone = "1";
+  root.classList.add("mdx-has-toc");
+
+  try {
+    const old = root.querySelector(":scope > .mdx-toc-panel");
+    if (old) old.remove();
+  } catch {}
+
+  const tree = plugin._buildHeadingTree(headings);
+
+  const panel = document.createElement("aside");
+  panel.className = "mdx-toc-panel mdx-toc-sticky";
+
+  if (headings.length > 10) {
+    panel.classList.add("mdx-toc-scroll");
+  }
+
+  const head = document.createElement("div");
+  head.className = "mdx-toc-head";
+
+  const title = document.createElement("div");
+  title.className = "mdx-toc-title";
+  title.textContent = "目录";
+
+  const count = document.createElement("div");
+  count.className = "mdx-toc-count";
+  count.textContent = `${headings.length}`;
+
+  const minBtn = document.createElement("button");
+  minBtn.className = "mdx-toc-min-btn";
+  minBtn.type = "button";
+  minBtn.textContent = "−";
+
+  minBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const minimized = panel.classList.toggle("mdx-toc-minimized");
+    minBtn.textContent = minimized ? "+" : "−";
+  };
+
+  head.appendChild(title);
+  head.appendChild(count);
+  head.appendChild(minBtn);
+
+  const body = document.createElement("div");
+  body.className = "mdx-toc-body";
+
+  const ul = document.createElement("ul");
+  ul.className = "mdx-toc-tree";
+
+  plugin._renderHeadingNodes(tree, ul);
+
+  body.appendChild(ul);
+  panel.appendChild(head);
+  panel.appendChild(body);
+
+  root.insertBefore(panel, root.firstChild);
+};
+
+plugin._renderHeadingNodes = (nodes, parentUl) => {
+  for (const node of nodes) {
+    const li = document.createElement("li");
+    li.className = `mdx-toc-node mdx-toc-level-${node.level}`;
+
+    const row = document.createElement("div");
+    row.className = "mdx-toc-row";
+
+    const toggle = document.createElement("span");
+    toggle.className = "mdx-toc-toggle";
+    toggle.textContent = "▾";
+
+    const link = document.createElement("a");
+    link.className = "mdx-toc-link";
+    link.href = `#${node.id}`;
+    link.title = node.text;
+    link.textContent = node.text;
+
+    link.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        node.el.scrollIntoView({
+          behavior: "smooth",
+          block: "start"
+        });
+      } catch {
+        try {
+          location.hash = node.id;
+        } catch {}
+      }
+    };
+
+    row.appendChild(toggle);
+    row.appendChild(link);
+    li.appendChild(row);
+
+    if (node.children && node.children.length) {
+      const childUl = document.createElement("ul");
+
+      toggle.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        li.classList.toggle("mdx-toc-collapsed");
+      };
+
+      plugin._renderHeadingNodes(node.children, childUl);
+      li.appendChild(childUl);
+    } else {
+      toggle.classList.add("mdx-toc-empty");
+      toggle.textContent = "•";
+
+      toggle.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+    }
+
+    parentUl.appendChild(li);
+  }
+};
+
+// ================= 面板大小自适应 =================
+
+plugin._installPanelSizeSync = function() {
+  if (plugin._state.tocResizeHandler) return;
+  plugin._state.tocResizeHandler = () => plugin._syncTocPanelSize();
+  window.addEventListener('resize', plugin._state.tocResizeHandler);
+
+  const panel = plugin._ctx?.ui?.panel || plugin._ctx?.extension?.ui?.panel;
+  if (panel && window.ResizeObserver) {
+    plugin._state.resizeObserver = new ResizeObserver(() => plugin._syncTocPanelSize());
+    plugin._state.resizeObserver.observe(panel);
+  }
+
+  // 每 1 秒额外兜底
+  setInterval(() => plugin._syncTocPanelSize(), 1000);
+};
+
+plugin._syncTocPanelSize = function() {
+  const roots = document.querySelectorAll('.mdx-enhanced-root[data-mdx-enhanced="1"]');
+  if (!roots.length) return;
+
+  const ctx = plugin._ctx;
+  const mainArea = ctx?.ui?.mainArea;
+  if (!mainArea) return;
+
+  const mainHeight = mainArea.clientHeight;
+  if (mainHeight <= 0) return;
+
+  const panelWidth = ctx?.ui?.panel?.clientWidth || 720;
+  let tocWidth = Math.min(300, Math.max(240, panelWidth * 0.32));
+  tocWidth = Math.floor(tocWidth);
+
+  for (const root of roots) {
+    const tocPanel = root.querySelector(':scope > .mdx-toc-panel');
+    if (!tocPanel) continue;
+
+    tocPanel.style.width = `${tocWidth}px`;
+    tocPanel.style.maxWidth = 'none';
+
+    const maxHeight = Math.max(150, mainHeight - 20);
+    tocPanel.style.maxHeight = `${maxHeight}px`;
+
+    const body = tocPanel.querySelector('.mdx-toc-body');
+    if (body) {
+      const needScroll = body.scrollHeight > maxHeight - 50;
+      if (needScroll && !tocPanel.classList.contains('mdx-toc-scroll')) {
+        tocPanel.classList.add('mdx-toc-scroll');
+      } else if (!needScroll && tocPanel.classList.contains('mdx-toc-scroll')) {
+        tocPanel.classList.remove('mdx-toc-scroll');
+      }
+    }
+  }
+};
+
+plugin._cleanupPanelSize = function() {
+  if (plugin._state.tocResizeHandler) {
+    window.removeEventListener('resize', plugin._state.tocResizeHandler);
+    plugin._state.tocResizeHandler = null;
+  }
+  if (plugin._state.resizeObserver) {
+    plugin._state.resizeObserver.disconnect();
+    plugin._state.resizeObserver = null;
   }
 };
