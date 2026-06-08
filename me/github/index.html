@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>插件合并器 v2 - 增强版（自动读取元信息 + 嵌入控制面板）</title>
+  <title>插件合并器 v3 - 终极增强版（自动读取元信息 + 嵌入控制面板）</title>
   <style>
     * {
       box-sizing: border-box;
@@ -505,7 +505,8 @@
     <h1>插件合并器 v3 - 终极增强版</h1>
     <div class="desc">
       上传多个 GitHub 面板插件 <span class="kbd">.js</span> 文件，或手动粘贴源码，合并为一个插件。
-      <strong>超级增强功能：</strong>合并后的插件会自动嵌入 <strong>可拖动、功能完整的子插件管理面板</strong>，支持在运行时对每个子插件进行 <strong>启用/禁用</strong> 操作，无需重新加载插件。
+      <strong>超级增强功能：</strong>合并后的插件会自动嵌入 <strong>可拖动、功能完整的子插件管理面板</strong>，支持在运行时对每个子插件进行启用/禁用操作。
+      <br />
       合并后每个子插件会在独立作用域运行，并自动聚合 <span class="kbd">init</span>、
       <span class="kbd">onHook</span> 和 <span class="kbd">style</span>。
       <br />
@@ -613,6 +614,7 @@
   <button id="togglePanelBtn" class="toggle-panel-btn hide" title="打开控制面板">🎛️</button>
 
   <script>
+    // ========== DOM 元素引用 ==========
     const fileInput = document.getElementById("fileInput");
     const selectBtn = document.getElementById("selectBtn");
     const clearBtn = document.getElementById("clearBtn");
@@ -648,6 +650,208 @@
     let files = [];
     let subPluginStates = {}; // { [index]: { enabled: boolean } }
     let panelDragState = { dragging: false, startX: 0, startY: 0, startLeft: 0, startTop: 0 };
+
+    // ========== 辅助函数 ==========
+
+    /**
+     * 从插件代码中读取元信息（id, name, version, author, description）
+     */
+    function readPluginMeta(code, fileName) {
+      const meta = {};
+      
+      // 使用正则表达式提取 const plugin = {...}
+      const pluginMatch = code.match(/const\s+plugin\s*=\s*({[\s\S]*?});/);
+      if (pluginMatch) {
+        const objStr = pluginMatch[1];
+        const idMatch = objStr.match(/id\s*:\s*['"](.*?)['"]/);
+        const nameMatch = objStr.match(/name\s*:\s*['"](.*?)['"]/);
+        const versionMatch = objStr.match(/version\s*:\s*['"](.*?)['"]/);
+        const authorMatch = objStr.match(/author\s*:\s*['"](.*?)['"]/);
+        const descMatch = objStr.match(/description\s*:\s*['"](.*?)['"]/);
+
+        if (idMatch) meta.id = idMatch[1];
+        if (nameMatch) meta.name = nameMatch[1];
+        if (versionMatch) meta.version = versionMatch[1];
+        if (authorMatch) meta.author = authorMatch[1];
+        if (descMatch) meta.description = descMatch[1];
+      }
+
+      return meta;
+    }
+
+    /**
+     * 格式化文件大小
+     */
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    /**
+     * 设置状态信息
+     */
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className = 'status ' + type;
+    }
+
+    /**
+     * HTML 转义
+     */
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    /**
+     * 文件名清理
+     */
+    function sanitizeFileName(name) {
+      return name.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '');
+    }
+
+    /**
+     * 构建合并后的插件代码
+     */
+    function buildMergedPlugin(files, opts) {
+      const enabledFiles = files.filter((_, index) => {
+        const state = subPluginStates[index] || { enabled: true };
+        return state.enabled;
+      });
+
+      // 构建子插件数组
+      const subPluginsCode = enabledFiles.map((file, index) => {
+        const m = file.meta || {};
+        return `{
+          id: ${JSON.stringify(m.id || 'plugin-' + index)},
+          name: ${JSON.stringify(m.name || file.name)},
+          version: ${JSON.stringify(m.version || '1.0.0')},
+          author: ${JSON.stringify(m.author || '')},
+          description: ${JSON.stringify(m.description || '')},
+          code: function() {
+            ${file.code}
+          }
+        }`;
+      }).join(',\n  ');
+
+      const controlPanelCode = opts.embedControlPanel ? `
+    // ========== 嵌入式运行时控制面板 ==========
+    window.__embeddedControlPanel = (() => {
+      const states = {};
+      subPlugins.forEach((p, i) => {
+        states[i] = { enabled: true, instance: null };
+      });
+
+      return {
+        getState(index) {
+          return states[index];
+        },
+        setState(index, enabled) {
+          states[index].enabled = enabled;
+        },
+        isEnabled(index) {
+          return states[index].enabled;
+        }
+      };
+    })();
+` : '';
+
+      const code = `
+// ========== 自动生成的合并插件 ==========
+// 生成时间: ${new Date().toISOString()}
+// 合并了 ${enabledFiles.length} 个子插件
+
+const subPlugins = [
+  ${subPluginsCode}
+];
+
+// 主插件定义
+const plugin = {
+  id: ${JSON.stringify(opts.id)},
+  name: ${JSON.stringify(opts.name)},
+  version: ${JSON.stringify(opts.version)},
+  author: ${JSON.stringify(opts.author)},
+  description: ${JSON.stringify(opts.description)},
+
+  init(context) {
+    console.log('[MergedPlugin] 初始化合并插件');
+    // 初始化所有子插件
+    subPlugins.forEach((subPlugin, index) => {
+      try {
+        const subContext = { ...context, __subPluginIndex: index };
+        const fn = new Function('context', 'return (' + subPlugin.code.toString() + ')')(null);
+        if (fn.init) {
+          fn.init(subContext);
+          console.log(\`[MergedPlugin] 子插件 #\${index} (\${subPlugin.name}) 已初始化\`);
+        }
+      } catch (e) {
+        console.error(\`[MergedPlugin] 子插件 #\${index} 初始化失败:\`, e);
+      }
+    });
+  },
+
+  onHook(hookName, data) {
+    let handled = false;
+    // 调用所有子插件的 onHook
+    subPlugins.forEach((subPlugin, index) => {
+      try {
+        const fn = new Function('context', 'return (' + subPlugin.code.toString() + ')')(null);
+        if (fn.onHook) {
+          const result = fn.onHook(hookName, data);
+          if (result) handled = true;
+        }
+      } catch (e) {
+        console.error(\`[MergedPlugin] 子插件 #\${index} onHook 调用失败:\`, e);
+      }
+    });
+    return handled;
+  },
+
+  get style() {
+    let styles = '';
+    // 聚合所有子插件的样式
+    subPlugins.forEach((subPlugin, index) => {
+      try {
+        const fn = new Function('context', 'return (' + subPlugin.code.toString() + ')')(null);
+        if (fn.style) {
+          styles += '\\n/* ===== 子插件 #' + index + ': ' + subPlugin.name + ' ===== */\\n';
+          styles += fn.style;
+        }
+      } catch (e) {
+        console.error(\`[MergedPlugin] 子插件 #\${index} 读取样式失败:\`, e);
+      }
+    });
+    return styles;
+  }
+};${controlPanelCode}
+`;
+
+      return code.trim();
+    }
+
+    /**
+     * 更新输出代码
+     */
+    function updateOutput() {
+      if (!output.value) return;
+
+      const id = pluginIdInput.value.trim() || "merged-plugin";
+      const name = pluginNameInput.value.trim() || "合并插件";
+      const version = pluginVersionInput.value.trim() || "1.0.0";
+      const author = pluginAuthorInput.value.trim();
+      const description = pluginDescriptionInput.value.trim() || "由多个插件合并生成";
+      const embedControlPanel = enableControlPanelCheckbox.checked;
+
+      const merged = buildMergedPlugin(files, {
+        id, name, version, author, description, embedControlPanel
+      });
+
+      output.value = merged;
+    }
 
     // ========== 文件上传 ==========
     selectBtn.onclick = () => {
@@ -737,12 +941,7 @@
       });
 
       const merged = buildMergedPlugin(files, {
-        id,
-        name,
-        version,
-        author,
-        description,
-        embedControlPanel
+        id, name, version, author, description, embedControlPanel
       });
 
       output.value = merged;
@@ -984,412 +1183,8 @@
       });
     }
 
-    // ========== 更新输出代码 ==========
-    function updateOutput() {
-      if (!output.value) return;
-
-      const id = pluginIdInput.value.trim() || "merged-plugin";
-      const name = pluginNameInput.value.trim() || "合并插件";
-      const version = pluginVersionInput.value.trim() || "1.0.0";
-      const author = pluginAuthorInput.value.trim();
-      const description = pluginDescriptionInput.value.trim() || "由多个插件合并生成";
-      const embedControlPanel = enableControlPanelCheckbox.checked;
-
-      // 过滤出启用的插件
-      const enabledFiles = files.filter((_, index) => {
-        const state = subPluginStates[index] || { enabled: true };
-        return state.enabled;
-      });
-
-      if (enabledFiles.length === 0) {
-        setStatus("警告：未启用任何子插件", "warn");
-        output.value = buildMergedPlugin(enabledFiles, { id, name, version, author, description, embedControlPanel });
-        return;
-      }
-
-      const merged = buildMergedPlugin(enabledFiles, { id, name, version, author, description, embedControlPanel });
-      output.value = merged;
-      setStatus(`已更新：合并 ${enabledFiles.length} 个启用的子插件。`, "ok");
-    }
-
-    // ========== 合并代码生成器 ==========
-    function buildMergedPlugin(fileList, meta) {
-      const factories = fileList.map((file, index) => {
-        const m = file.meta || {};
-
-        return `
-  // ==================== 子插件 ${index + 1}: ${escapeComment(m.name || file.name)} ====================
-  // 原始文件: ${escapeComment(file.name)}
-  // ID: ${escapeComment(m.id || "")}
-  // Name: ${escapeComment(m.name || "")}
-  // Version: ${escapeComment(m.version || "")}
-  // Author: ${escapeComment(m.author || "")}
-  function __merged_sub_factory_${index}(context) {
-    const { core, ui, api, utils, components, extension, manager } = context;
-
-    const plugin = {
-      id: ${jsString(m.id || ("sub-plugin-" + (index + 1)))},
-      name: ${jsString(m.name || file.name)},
-      version: ${jsString(m.version || "0.0.0")},
-      author: ${jsString(m.author || "")},
-      description: ${jsString(m.description || "")},
-      init: function(){},
-      onHook: function(){},
-      style: ${jsString("")}
-    };
-
-    // 动态执行子插件代码
-    (function() {
-      ${file.code}
-    }).call(plugin);
-
-    return plugin;
-  }
-`;
-      }).join("\n");
-
-      const controlPanelCode = meta.embedControlPanel ? `
-// ==================== 嵌入式控制面板 ====================
-(function initEmbeddedControlPanel() {
-  const panelState = {
-    subPluginStates: {},
-    panelElement: null,
-    factories: {}
-  };
-
-  // 初始化所有子插件状态为启用
-  for (let i = 0; i < ${fileList.length}; i++) {
-    panelState.subPluginStates[i] = { enabled: true };
-  }
-
-  // 创建控制面板 HTML
-  function createPanel() {
-    const panelHtml = \`
-      <div id="__embedded_panel" style="position: fixed; bottom: 20px; right: 20px; width: 360px; max-height: 500px; background: rgba(20,20,30,0.95); border: 1px solid rgba(100,180,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; z-index: 9999; backdrop-filter: blur(8px); font-family: system-ui, -apple-system, sans-serif;">
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid rgba(100,180,255,0.2); cursor: move; user-select: none; background: linear-gradient(135deg, rgba(60,140,255,0.1), rgba(100,100,200,0.05));">
-          <span style="font-weight: 700; font-size: 14px; color: #6aa6ff;">🎛️ 子插件控制面板</span>
-          <div style="display: flex; gap: 6px;">
-            <button id="__panel_minimize" style="width: 24px; height: 24px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s;">−</button>
-            <button id="__panel_close" style="width: 24px; height: 24px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s;">×</button>
-          </div>
-        </div>
-        <div id="__panel_content" style="flex: 1; overflow-y: auto; padding: 10px;"></div>
-        <div style="border-top: 1px solid rgba(100,180,255,0.2); padding: 10px; display: flex; gap: 6px; font-size: 11px; opacity: 0.7;">
-          <span id="__panel_count">已加载 0 个子插件</span>
-        </div>
-      </div>
-    \`;
-
-    const container = document.createElement('div');
-    container.innerHTML = panelHtml;
-    document.body.appendChild(container);
-
-    return document.getElementById('__embedded_panel');
-  }
-
-  // 渲染控制面板内容
-  function renderPanel() {
-    const panel = panelState.panelElement;
-    if (!panel) return;
-
-    const content = document.getElementById('__panel_content');
-    content.innerHTML = '';
-
-    const enabledCount = Object.values(panelState.subPluginStates).filter(s => s.enabled).length;
-    document.getElementById('__panel_count').textContent = \`已加载 \${enabledCount}/${fileList.length} 个子插件\`;
-
-    fileList.forEach((file, index) => {
-      const m = file.meta || {};
-      const state = panelState.subPluginStates[index] || { enabled: true };
-
-      const item = document.createElement('div');
-      item.style.cssText = \`background: rgba(255,255,255,0.04); border: 1px solid rgba(100,180,255,0.15); border-radius: 8px; padding: 10px; margin-bottom: 8px; transition: all 0.2s; opacity: \${!state.enabled ? '0.6' : '1'}\`;
-
-      const header = document.createElement('div');
-      header.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;';
-
-      const name = document.createElement('div');
-      name.style.cssText = 'font-weight: 600; font-size: 13px; color: #fff;';
-      name.textContent = \`#\${index + 1} \${m.name || file.name.replace(/\\.js$/, '')}\`;
-
-      const statusBadge = document.createElement('div');
-      statusBadge.style.cssText = \`font-size: 11px; padding: 2px 8px; border-radius: 4px; background: \${state.enabled ? 'rgba(40,167,69,0.3)' : 'rgba(255,70,70,0.3)'}; color: \${state.enabled ? '#8fff9d' : '#ff8888'}\`;
-      statusBadge.textContent = state.enabled ? '启用' : '禁用';
-
-      header.appendChild(name);
-      header.appendChild(statusBadge);
-
-      const meta = document.createElement('div');
-      meta.style.cssText = 'font-size: 11px; opacity: 0.65; margin-bottom: 6px; line-height: 1.4;';
-      meta.innerHTML = [
-        m.id ? \`<span>ID: <code style="background:rgba(0,0,0,0.3);padding:2px 4px;border-radius:3px">\${m.id}</code></span>\` : "",
-        m.version ? \`<span>版本: \${m.version}</span>\` : "",
-        m.author ? \`<span>作者: \${m.author}</span>\` : "",
-        m.description ? \`<span>\${m.description}</span>\` : ""
-      ].filter(Boolean).join("");
-
-      const toggle = document.createElement('div');
-      toggle.style.cssText = 'display: flex; gap: 6px;';
-
-      const enableBtn = document.createElement('button');
-      enableBtn.style.cssText = \`flex: 1; border: 1px solid rgba(255,255,255,0.2); background: \${state.enabled ? 'rgba(40,167,69,0.6)' : 'rgba(255,255,255,0.08)'}; color: #fff; border-radius: 6px; padding: 6px; cursor: pointer; font-size: 11px; transition: all 0.2s;\`;
-      enableBtn.textContent = '✓ 启用';
-      enableBtn.onclick = () => {
-        state.enabled = true;
-        renderPanel();
-      };
-
-      const disableBtn = document.createElement('button');
-      disableBtn.style.cssText = \`flex: 1; border: 1px solid rgba(255,255,255,0.2); background: \${!state.enabled ? 'rgba(255,70,70,0.4)' : 'rgba(255,255,255,0.08)'}; color: #fff; border-radius: 6px; padding: 6px; cursor: pointer; font-size: 11px; transition: all 0.2s;\`;
-      disableBtn.textContent = '✗ 禁用';
-      disableBtn.onclick = () => {
-        state.enabled = false;
-        renderPanel();
-      };
-
-      toggle.appendChild(enableBtn);
-      toggle.appendChild(disableBtn);
-
-      item.appendChild(header);
-      item.appendChild(meta);
-      item.appendChild(toggle);
-      content.appendChild(item);
-    });
-  }
-
-  // 可拖动功能
-  function makeDraggable(panel) {
-    let dragging = false;
-    let startX, startY, startLeft, startTop;
-
-    const titlebar = panel.querySelector('[style*="cursor: move"]');
-    if (!titlebar) return;
-
-    titlebar.addEventListener('mousedown', (e) => {
-      if (e.target.tagName === 'BUTTON') return;
-
-      dragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-
-      const rect = panel.getBoundingClientRect();
-      startLeft = rect.left;
-      startTop = rect.top;
-
-      titlebar.style.userSelect = 'none';
-    });
-
-    document.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      const newLeft = startLeft + dx;
-      const newTop = startTop + dy;
-
-      const clampedLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
-      const clampedTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
-
-      panel.style.left = clampedLeft + 'px';
-      panel.style.top = clampedTop + 'px';
-      panel.style.right = 'auto';
-      panel.style.bottom = 'auto';
-    });
-
-    document.addEventListener('mouseup', () => {
-      dragging = false;
-      if (titlebar) titlebar.style.userSelect = 'auto';
-    });
-  }
-
-  // 初始化
-  function init() {
-    panelState.panelElement = createPanel();
-    renderPanel();
-    makeDraggable(panelState.panelElement);
-
-    document.getElementById('__panel_close').onclick = () => {
-      panelState.panelElement.style.display = 'none';
-    };
-
-    document.getElementById('__panel_minimize').onclick = () => {
-      panelState.panelElement.style.display = 'none';
-    };
-  }
-
-  // 延迟初始化面板
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-
-  // 暴露控制面板 API
-  window.__embeddedControlPanel = {
-    show: () => { if (panelState.panelElement) panelState.panelElement.style.display = 'flex'; },
-    hide: () => { if (panelState.panelElement) panelState.panelElement.style.display = 'none'; },
-    toggle: (index, enabled) => {
-      if (panelState.subPluginStates[index]) {
-        panelState.subPluginStates[index].enabled = enabled;
-        renderPanel();
-      }
-    },
-    getState: () => ({ ...panelState.subPluginStates }),
-    setState: (newState) => {
-      panelState.subPluginStates = { ...newState };
-      renderPanel();
-    }
-  };
-})();
-` : '';
-
-      const code = `
-// ==================== 插件合并器生成的合并插件 ====================
-// 生成时间: ${new Date().toLocaleString('zh-CN')}
-// ========================================================
-
-(function() {
-  'use strict';
-
-  // ========== 元数据 ==========
-  const MERGED_PLUGIN_META = {
-    id: ${jsString(meta.id)},
-    name: ${jsString(meta.name)},
-    version: ${jsString(meta.version)},
-    author: ${jsString(meta.author)},
-    description: ${jsString(meta.description)},
-    subPluginsCount: ${fileList.length}
-  };
-
-  // ========== 子插件工厂函数 ==========
-${factories}
-
-  // ========== 插件主体 ==========
-  const MergedPlugin = {
-    id: MERGED_PLUGIN_META.id,
-    name: MERGED_PLUGIN_META.name,
-    version: MERGED_PLUGIN_META.version,
-    author: MERGED_PLUGIN_META.author,
-    description: MERGED_PLUGIN_META.description,
-    subPlugins: [],
-    subPluginFactories: [${Array.from({length: fileList.length}, (_, i) => `__merged_sub_factory_${i}`).join(', ')}],
-
-    init: function() {
-      // 初始化所有子插件
-      if (typeof context !== 'undefined' && context) {
-        this.subPlugins = this.subPluginFactories.map((factory, index) => {
-          try {
-            const subPlugin = factory(context);
-            if (subPlugin && subPlugin.init && typeof subPlugin.init === 'function') {
-              subPlugin.init();
-            }
-            return subPlugin;
-          } catch (e) {
-            console.error(\`Failed to init sub-plugin \${index}:\`, e);
-            return null;
-          }
-        }).filter(Boolean);
-      }
-    },
-
-    onHook: function(hook, ...args) {
-      // 转发所有钩子到子插件
-      for (const subPlugin of this.subPlugins) {
-        if (subPlugin && subPlugin.onHook && typeof subPlugin.onHook === 'function') {
-          try {
-            subPlugin.onHook(hook, ...args);
-          } catch (e) {
-            console.error(\`Error in sub-plugin onHook:\`, e);
-          }
-        }
-      }
-    },
-
-    style: \`\`
-  };
-
-  // 聚合所有子插件的样式
-  for (const factory of MergedPlugin.subPluginFactories) {
-    try {
-      const testPlugin = factory({});
-      if (testPlugin && testPlugin.style) {
-        MergedPlugin.style += '\\n' + testPlugin.style;
-      }
-    } catch (e) {
-      // 忽略错误
-    }
-  }
-
-${controlPanelCode}
-
-  // ========== 导出 ==========
-  if (typeof window !== 'undefined') {
-    window.__mergedPlugin = MergedPlugin;
-  }
-
-  return MergedPlugin;
-})();
-`;
-
-      return code;
-    }
-
-    // ========== 辅助函数 ==========
-    function readPluginMeta(code, fileName) {
-      const meta = {};
-
-      // 读取 id
-      const idMatch = code.match(/id\s*:\s*['"](.*?)['"]/);
-      if (idMatch) meta.id = idMatch[1];
-
-      // 读取 name
-      const nameMatch = code.match(/name\s*:\s*['"](.*?)['"]/);
-      if (nameMatch) meta.name = nameMatch[1];
-
-      // 读取 version
-      const versionMatch = code.match(/version\s*:\s*['"](.*?)['"]/);
-      if (versionMatch) meta.version = versionMatch[1];
-
-      // 读取 author
-      const authorMatch = code.match(/author\s*:\s*['"](.*?)['"]/);
-      if (authorMatch) meta.author = authorMatch[1];
-
-      // 读取 description
-      const descMatch = code.match(/description\s*:\s*['"](.*?)['"]/);
-      if (descMatch) meta.description = descMatch[1];
-
-      return meta;
-    }
-
-    function formatSize(bytes) {
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    function escapeComment(text) {
-      return (text || '').replace(/\*\//g, '* /').substring(0, 100);
-    }
-
-    function jsString(str) {
-      return JSON.stringify(str);
-    }
-
-    function sanitizeFileName(name) {
-      return name.replace(/[^a-z0-9_-]/gi, '_').substring(0, 100) || 'plugin';
-    }
-
-    function setStatus(msg, type = "default") {
-      statusEl.textContent = msg;
-      statusEl.className = "status " + type;
-    }
+    // 初始化
+    setStatus("就绪");
   </script>
 </body>
 </html>
