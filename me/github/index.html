@@ -87,6 +87,11 @@
       box-shadow: 0 0 0 3px rgba(80,150,255,0.16);
     }
 
+    input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+    }
+
     input[type="file"] {
       display: none;
     }
@@ -1004,200 +1009,13 @@
 
       const merged = buildMergedPlugin(enabledFiles, { id, name, version, author, description, embedControlPanel });
       output.value = merged;
-      setStatus(`已更新：合并 ${enabledFiles.length} 个启用的子插件。`, "ok");
-    }
-
-    // ========== 嵌入控制面板代码生成 ==========
-    function generateEmbeddedControlPanel() {
-      return `
-  // ==================== 嵌入式子插件控制面板 ====================
-  const __embeddedControlPanel = (() => {
-    let pluginStates = {}; // 存储子插件状态
-    let panelElement = null;
-    let dragging = false;
-    let dragStart = { x: 0, y: 0, left: 0, top: 0 };
-
-    function initStates(plugins) {
-      plugins.forEach((p, i) => {
-        pluginStates[i] = { enabled: true, plugin: p };
-      });
-    }
-
-    function createPanel(plugins) {
-      if (panelElement) return panelElement;
-
-      // 创建面板容器
-      const panel = document.createElement("div");
-      panel.style.cssText = \`
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        width: 360px;
-        max-height: 500px;
-        background: rgba(20,20,30,0.95);
-        border: 1px solid rgba(100,180,255,0.3);
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-        display: flex;
-        flex-direction: column;
-        z-index: 10000;
-        backdrop-filter: blur(8px);
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      \`;
-
-      // 标题栏
-      const titlebar = document.createElement("div");
-      titlebar.style.cssText = \`
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 14px;
-        border-bottom: 1px solid rgba(100,180,255,0.2);
-        cursor: move;
-        user-select: none;
-        background: linear-gradient(135deg, rgba(60,140,255,0.1), rgba(100,100,200,0.05));
-      \`;
-
-      const title = document.createElement("span");
-      title.textContent = "🎛️ 子插件控制面板";
-      title.style.cssText = "font-weight: 700; font-size: 14px; color: #6aa6ff;";
-
-      const controls = document.createElement("div");
-      controls.style.cssText = "display: flex; gap: 6px;";
-
-      const minimizeBtn = document.createElement("button");
-      minimizeBtn.textContent = "−";
-      minimizeBtn.style.cssText = "width: 24px; height: 24px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; border-radius: 6px; cursor: pointer; font-size: 12px;";
-      minimizeBtn.onclick = () => panel.style.display = "none";
-
-      const closeBtn = document.createElement("button");
-      closeBtn.textContent = "×";
-      closeBtn.style.cssText = "width: 24px; height: 24px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; border-radius: 6px; cursor: pointer; font-size: 12px;";
-      closeBtn.onclick = () => {
-        panel.remove();
-        panelElement = null;
-      };
-
-      controls.appendChild(minimizeBtn);
-      controls.appendChild(closeBtn);
-
-      titlebar.appendChild(title);
-      titlebar.appendChild(controls);
-
-      // 内容区
-      const content = document.createElement("div");
-      content.style.cssText = "flex: 1; overflow-y: auto; padding: 10px;";
-
-      // 插件列表
-      plugins.forEach((p, i) => {
-        const item = document.createElement("div");
-        item.style.cssText = "background: rgba(255,255,255,0.04); border: 1px solid rgba(100,180,255,0.15); border-radius: 8px; padding: 10px; margin-bottom: 8px; transition: all 0.2s;";
-
-        const header = document.createElement("div");
-        header.style.cssText = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;";
-
-        const name = document.createElement("div");
-        name.textContent = "#" + (i + 1) + " " + (p.name || "插件 " + i);
-        name.style.cssText = "font-weight: 600; font-size: 13px; color: #fff;";
-
-        const status = document.createElement("div");
-        status.textContent = "启用";
-        status.style.cssText = "font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(40,167,69,0.3); color: #8fff9d;";
-
-        header.appendChild(name);
-        header.appendChild(status);
-
-        const toggle = document.createElement("div");
-        toggle.style.cssText = "display: flex; gap: 6px;";
-
-        const enableBtn = document.createElement("button");
-        enableBtn.textContent = "✓ 启用";
-        enableBtn.style.cssText = "flex: 1; border: 1px solid rgba(255,255,255,0.2); background: rgba(40,167,69,0.6); color: #fff; border-radius: 6px; padding: 6px; cursor: pointer; font-size: 11px;";
-        enableBtn.onclick = () => {
-          pluginStates[i].enabled = true;
-          status.textContent = "启用";
-          status.style.background = "rgba(40,167,69,0.3)";
-          item.style.opacity = "1";
-        };
-
-        const disableBtn = document.createElement("button");
-        disableBtn.textContent = "✗ 禁用";
-        disableBtn.style.cssText = "flex: 1; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,70,70,0.2); color: #fff; border-radius: 6px; padding: 6px; cursor: pointer; font-size: 11px;";
-        disableBtn.onclick = () => {
-          pluginStates[i].enabled = false;
-          status.textContent = "禁用";
-          status.style.background = "rgba(255,70,70,0.3)";
-          item.style.opacity = "0.6";
-        };
-
-        toggle.appendChild(enableBtn);
-        toggle.appendChild(disableBtn);
-
-        item.appendChild(header);
-        item.appendChild(toggle);
-        content.appendChild(item);
-      });
-
-      // 底部
-      const footer = document.createElement("div");
-      footer.style.cssText = "border-top: 1px solid rgba(100,180,255,0.2); padding: 10px; font-size: 11px; opacity: 0.7;";
-      footer.textContent = "已加载 " + plugins.length + " 个子插件";
-
-      panel.appendChild(titlebar);
-      panel.appendChild(content);
-      panel.appendChild(footer);
-
-      // 拖动功能
-      titlebar.addEventListener("mousedown", (e) => {
-        if (e.target.tagName === "BUTTON") return;
-        dragging = true;
-        dragStart.x = e.clientX;
-        dragStart.y = e.clientY;
-        const rect = panel.getBoundingClientRect();
-        dragStart.left = rect.left;
-        dragStart.top = rect.top;
-      });
-
-      document.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
-        const dx = e.clientX - dragStart.x;
-        const dy = e.clientY - dragStart.y;
-        panel.style.left = (dragStart.left + dx) + "px";
-        panel.style.top = (dragStart.top + dy) + "px";
-        panel.style.right = "auto";
-        panel.style.bottom = "auto";
-      });
-
-      document.addEventListener("mouseup", () => {
-        dragging = false;
-      });
-
-      panelElement = panel;
-      return panel;
-    }
-
-    return {
-      init: function(plugins) {
-        initStates(plugins);
-        const panel = createPanel(plugins);
-        document.body.appendChild(panel);
-      },
-      isEnabled: function(index) {
-        return pluginStates[index]?.enabled ?? true;
-      },
-      getPanel: function() {
-        return panelElement;
-      }
-    };
-  })();
-`;
+      setStatus(`已更新：合并 ${enabledFiles.length} 个启用的子插件。${embedControlPanel ? '（已嵌入控制面板）' : ''}`, "ok");
     }
 
     // ========== 合并代码生成器 ==========
     function buildMergedPlugin(fileList, meta) {
       const factories = fileList.map((file, index) => {
         const m = file.meta || {};
-
         return `
   // ==================== 子插件 ${index + 1}: ${escapeComment(m.name || file.name)} ====================
   // 原始文件: ${escapeComment(file.name)}
@@ -1207,6 +1025,17 @@
   // Author: ${escapeComment(m.author || "")}
   function __merged_sub_factory_${index}(context) {
     const { core, ui, api, utils, components, extension, manager } = context;
+    
+    // 获取启用/禁用状态
+    const __pluginIndex = ${index};
+    const __getState = () => {
+      if (typeof window.__embeddedControlPanel !== 'undefined' && 
+          window.__embeddedControlPanel.subPluginStates &&
+          typeof window.__embeddedControlPanel.subPluginStates[__pluginIndex] !== 'undefined') {
+        return window.__embeddedControlPanel.subPluginStates[__pluginIndex].enabled;
+      }
+      return true;
+    };
 
     const plugin = {
       id: ${jsString(m.id || ("sub-plugin-" + (index + 1)))},
@@ -1219,139 +1048,533 @@
       style: \`\`,
     };
 
-    // -------- 在这里插入原始插件代码 --------
-    (function() {
-${indentCode(file.code, 6)}
-    }).call(plugin);
-    // -------- 原始插件代码结束 --------
+    // ========== 原始插件代码开始 ==========
+    ${file.code}
+    // ========== 原始插件代码结束 ==========
 
     return plugin;
   }
 `;
       });
 
-      const pluginList = fileList.map((file, index) => {
-        const m = file.meta || {};
-        return `    { id: ${jsString(m.id || ("sub-plugin-" + (index + 1)))}, name: ${jsString(m.name || file.name)}, factory: __merged_sub_factory_${index} }`;
-      }).join(",\n");
+      const aggregateInitCode = `
+  const initFunctions = [];
+  const onHookFunctions = [];
+  const styles = [];
+  
+  for (let i = 0; i < __factories.length; i++) {
+    try {
+      const subPlugin = __factories[i](context);
+      if (subPlugin) {
+        if (typeof subPlugin.init === 'function') {
+          initFunctions.push(() => {
+            if (typeof window.__embeddedControlPanel !== 'undefined' && 
+                window.__embeddedControlPanel.subPluginStates &&
+                !window.__embeddedControlPanel.subPluginStates[i].enabled) {
+              return;
+            }
+            try {
+              subPlugin.init();
+            } catch (e) {
+              console.error(\`子插件 #\${i + 1} init 执行失败:\`, e);
+            }
+          });
+        }
+        if (typeof subPlugin.onHook === 'function') {
+          onHookFunctions.push((data) => {
+            if (typeof window.__embeddedControlPanel !== 'undefined' && 
+                window.__embeddedControlPanel.subPluginStates &&
+                !window.__embeddedControlPanel.subPluginStates[i].enabled) {
+              return;
+            }
+            try {
+              subPlugin.onHook(data);
+            } catch (e) {
+              console.error(\`子插件 #\${i + 1} onHook 执行失败:\`, e);
+            }
+          });
+        }
+        if (subPlugin.style) {
+          styles.push(subPlugin.style);
+        }
+      }
+    } catch (e) {
+      console.error(\`加载子插件 #\${i + 1} 失败:\`, e);
+    }
+  }
 
-      const mainCode = meta.embedControlPanel ? generateEmbeddedControlPanel() : "";
+  mergedPlugin.init = () => {
+    initFunctions.forEach(fn => fn());
+  };
 
-      return `(function() {
-  "use strict";
+  mergedPlugin.onHook = (data) => {
+    onHookFunctions.forEach(fn => fn(data));
+  };
 
-  ${mainCode}
+  if (styles.length > 0) {
+    mergedPlugin.style = styles.join('\\n');
+  }
+`;
 
-  // ==================== 合并插件主体 ====================
-  const __mergedPluginFactories = [
-${pluginList}
+      const panelCode = meta.embedControlPanel ? `
+  // ========== 嵌入式可拖动控制面板 ==========
+  if (typeof window !== 'undefined' && !window.__embeddedControlPanel) {
+    window.__embeddedControlPanel = {
+      subPluginStates: ${jsString(Object.fromEntries(fileList.map((_, i) => [i, { enabled: true }])))},
+      
+      createControlPanel: function() {
+        if (document.getElementById('__merged_plugin_panel')) {
+          return;
+        }
+
+        const style = document.createElement('style');
+        style.textContent = \`
+          #__merged_plugin_panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 360px;
+            max-height: 500px;
+            background: rgba(20,20,30,0.95);
+            border: 1px solid rgba(100,180,255,0.3);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            display: flex;
+            flex-direction: column;
+            z-index: 10000;
+            backdrop-filter: blur(8px);
+            color: #fff;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          
+          #__merged_plugin_panel * {
+            box-sizing: border-box;
+          }
+          
+          #__merged_plugin_titlebar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(100,180,255,0.2);
+            cursor: move;
+            user-select: none;
+            background: linear-gradient(135deg, rgba(60,140,255,0.1), rgba(100,100,200,0.05));
+          }
+          
+          #__merged_plugin_title {
+            font-weight: 700;
+            font-size: 14px;
+            color: #6aa6ff;
+          }
+          
+          #__merged_plugin_controls {
+            display: flex;
+            gap: 6px;
+          }
+          
+          .merged_plugin_btn {
+            width: 24px;
+            height: 24px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            transition: all 0.2s;
+          }
+          
+          .merged_plugin_btn:hover {
+            background: rgba(100,180,255,0.2);
+            border-color: rgba(100,180,255,0.4);
+          }
+          
+          #__merged_plugin_content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+          }
+          
+          .merged_plugin_item {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(100,180,255,0.15);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+          }
+          
+          .merged_plugin_item:hover {
+            background: rgba(100,180,255,0.08);
+            border-color: rgba(100,180,255,0.3);
+          }
+          
+          .merged_plugin_item.disabled {
+            opacity: 0.6;
+            background: rgba(255,70,70,0.08);
+            border-color: rgba(255,70,70,0.2);
+          }
+          
+          .merged_plugin_header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+          }
+          
+          .merged_plugin_name {
+            font-weight: 600;
+            font-size: 13px;
+            color: #fff;
+          }
+          
+          .merged_plugin_status {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(40,167,69,0.3);
+            color: #8fff9d;
+          }
+          
+          .merged_plugin_status.disabled-state {
+            background: rgba(255,70,70,0.3);
+            color: #ff8888;
+          }
+          
+          .merged_plugin_toggle {
+            display: flex;
+            gap: 6px;
+          }
+          
+          .merged_plugin_toggle_btn {
+            flex: 1;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            border-radius: 6px;
+            padding: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+          }
+          
+          .merged_plugin_toggle_btn:hover {
+            background: rgba(255,255,255,0.14);
+          }
+          
+          .merged_plugin_toggle_btn.active {
+            background: rgba(40,167,69,0.6);
+            border-color: rgba(40,167,69,0.8);
+          }
+          
+          .merged_plugin_toggle_btn.disabled-mode {
+            background: rgba(255,70,70,0.4);
+            border-color: rgba(255,70,70,0.6);
+          }
+          
+          #__merged_plugin_footer {
+            border-top: 1px solid rgba(100,180,255,0.2);
+            padding: 10px;
+            display: flex;
+            gap: 6px;
+            font-size: 11px;
+            opacity: 0.7;
+          }
+          
+          #__merged_plugin_content::-webkit-scrollbar {
+            width: 6px;
+          }
+          
+          #__merged_plugin_content::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+          }
+          
+          #__merged_plugin_content::-webkit-scrollbar-thumb {
+            background: rgba(100,180,255,0.3);
+            border-radius: 3px;
+          }
+          
+          #__merged_plugin_content::-webkit-scrollbar-thumb:hover {
+            background: rgba(100,180,255,0.5);
+          }
+        \`;
+        document.head.appendChild(style);
+
+        const panel = document.createElement('div');
+        panel.id = '__merged_plugin_panel';
+
+        const titlebar = document.createElement('div');
+        titlebar.id = '__merged_plugin_titlebar';
+
+        const title = document.createElement('span');
+        title.id = '__merged_plugin_title';
+        title.textContent = '🎛️ 子插件控制面板';
+
+        const controls = document.createElement('div');
+        controls.id = '__merged_plugin_controls';
+
+        const minBtn = document.createElement('button');
+        minBtn.className = 'merged_plugin_btn';
+        minBtn.textContent = '−';
+        minBtn.title = '最小化';
+        minBtn.onclick = (e) => {
+          e.stopPropagation();
+          panel.style.display = 'none';
+        };
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'merged_plugin_btn';
+        closeBtn.textContent = '×';
+        closeBtn.title = '关闭';
+        closeBtn.onclick = (e) => {
+          e.stopPropagation();
+          document.body.removeChild(panel);
+          window.__embeddedControlPanel.controlPanel = null;
+        };
+
+        controls.appendChild(minBtn);
+        controls.appendChild(closeBtn);
+        titlebar.appendChild(title);
+        titlebar.appendChild(controls);
+
+        const content = document.createElement('div');
+        content.id = '__merged_plugin_content';
+
+        const footer = document.createElement('div');
+        footer.id = '__merged_plugin_footer';
+        footer.textContent = \`已加载 \${fileList.length} 个子插件\`;
+
+        panel.appendChild(titlebar);
+        panel.appendChild(content);
+        panel.appendChild(footer);
+
+        // 渲染子插件项
+        fileList.forEach((f, idx) => {
+          const item = document.createElement('div');
+          item.className = \`merged_plugin_item \${!this.subPluginStates[idx].enabled ? 'disabled' : ''}\`;
+
+          const header = document.createElement('div');
+          header.className = 'merged_plugin_header';
+
+          const name = document.createElement('div');
+          name.className = 'merged_plugin_name';
+          name.textContent = \`#\${idx + 1} \${f.meta?.name || f.name.replace(/\.js$/, '')}\`;
+
+          const status = document.createElement('div');
+          status.className = \`merged_plugin_status \${!this.subPluginStates[idx].enabled ? 'disabled-state' : ''}\`;
+          status.textContent = this.subPluginStates[idx].enabled ? '启用' : '禁用';
+
+          header.appendChild(name);
+          header.appendChild(status);
+
+          const toggle = document.createElement('div');
+          toggle.className = 'merged_plugin_toggle';
+
+          const enableBtn = document.createElement('button');
+          enableBtn.className = \`merged_plugin_toggle_btn \${this.subPluginStates[idx].enabled ? 'active' : ''}\`;
+          enableBtn.textContent = '✓ 启用';
+          enableBtn.onclick = () => {
+            this.subPluginStates[idx].enabled = true;
+            this.updatePanel();
+          };
+
+          const disableBtn = document.createElement('button');
+          disableBtn.className = \`merged_plugin_toggle_btn \${!this.subPluginStates[idx].enabled ? 'disabled-mode' : ''}\`;
+          disableBtn.textContent = '✗ 禁用';
+          disableBtn.onclick = () => {
+            this.subPluginStates[idx].enabled = false;
+            this.updatePanel();
+          };
+
+          toggle.appendChild(enableBtn);
+          toggle.appendChild(disableBtn);
+
+          item.appendChild(header);
+          item.appendChild(toggle);
+          content.appendChild(item);
+        });
+
+        // 可拖动功能
+        let dragging = false;
+        let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+        titlebar.addEventListener('mousedown', (e) => {
+          if (e.target.classList.contains('merged_plugin_btn')) return;
+          dragging = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          const rect = panel.getBoundingClientRect();
+          startLeft = rect.left;
+          startTop = rect.top;
+          titlebar.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!dragging) return;
+          const dx = e.clientX - startX;
+          const dy = e.clientY - startY;
+          const newLeft = Math.max(0, Math.min(startLeft + dx, window.innerWidth - panel.offsetWidth));
+          const newTop = Math.max(0, Math.min(startTop + dy, window.innerHeight - panel.offsetHeight));
+          panel.style.left = newLeft + 'px';
+          panel.style.top = newTop + 'px';
+          panel.style.right = 'auto';
+          panel.style.bottom = 'auto';
+        });
+
+        document.addEventListener('mouseup', () => {
+          dragging = false;
+          titlebar.style.userSelect = 'auto';
+        });
+
+        document.body.appendChild(panel);
+        this.controlPanel = panel;
+      },
+
+      updatePanel: function() {
+        if (this.controlPanel) {
+          this.controlPanel.remove();
+          this.createControlPanel();
+        }
+      }
+    };
+
+    // 在合并插件 init 时创建面板
+    const originalInit = mergedPlugin.init;
+    mergedPlugin.init = function() {
+      originalInit.call(this);
+      if (window.__embeddedControlPanel && typeof window.__embeddedControlPanel.createControlPanel === 'function') {
+        setTimeout(() => window.__embeddedControlPanel.createControlPanel(), 100);
+      }
+    };
+  }
+` : '';
+
+      const code = `
+// ==================== 合并插件 ====================
+// ID: ${meta.id}
+// Name: ${meta.name}
+// Version: ${meta.version}
+// Author: ${meta.author || '未知'}
+// Description: ${meta.description}
+// Generated at: ${new Date().toISOString()}
+// Total sub-plugins: ${fileList.length}
+
+(function() {
+  'use strict';
+
+  // ========== 子插件工厂函数 ==========
+  const __factories = [
+${factories.join('')}
   ];
 
-  const __mergedPlugin = {
+  // ========== 合并插件定义 ==========
+  const mergedPlugin = {
     id: ${jsString(meta.id)},
     name: ${jsString(meta.name)},
     version: ${jsString(meta.version)},
-    author: ${jsString(meta.author)},
+    author: ${jsString(meta.author || "")},
     description: ${jsString(meta.description)},
-
-    init: function(context) {
-      const plugins = __mergedPluginFactories.map(item => item.factory(context));
-      
-      if (typeof __embeddedControlPanel !== 'undefined') {
-        __embeddedControlPanel.init(plugins);
-      }
-
-      plugins.forEach((plugin, index) => {
-        if (typeof plugin.init === 'function') {
-          plugin.init();
-        }
-      });
-    },
-
-    onHook: function(name, data) {
-      const plugins = __mergedPluginFactories.map(item => item.factory(this.context));
-      plugins.forEach((plugin, index) => {
-        if (typeof __embeddedControlPanel !== 'undefined' && !__embeddedControlPanel.isEnabled(index)) {
-          return;
-        }
-        if (typeof plugin.onHook === 'function') {
-          plugin.onHook(name, data);
-        }
-      });
-    },
-
-    style: \`\`
+    style: \`\`,
   };
 
-  // 导出为全局对象或模块
+  // ========== 创建上下文 ==========
+  const context = {
+    core: typeof core !== 'undefined' ? core : {},
+    ui: typeof ui !== 'undefined' ? ui : {},
+    api: typeof api !== 'undefined' ? api : {},
+    utils: typeof utils !== 'undefined' ? utils : {},
+    components: typeof components !== 'undefined' ? components : {},
+    extension: typeof extension !== 'undefined' ? extension : {},
+    manager: typeof manager !== 'undefined' ? manager : {}
+  };
+
+  // ========== 聚合子插件 ==========
+${aggregateInitCode}
+
+${panelCode}
+
+  // ========== 导出合并插件 ==========
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = __mergedPlugin;
+    module.exports = mergedPlugin;
   } else if (typeof window !== 'undefined') {
-    window.__mergedPlugin = __mergedPlugin;
+    window.__mergedPlugin = mergedPlugin;
   }
+
+  return mergedPlugin;
 })();
 `;
+
+      return code;
     }
 
-    // ========== 辅助函数 ==========
-    function readPluginMeta(code, filename) {
+    // ========== 工具函数 ==========
+    function readPluginMeta(code, fileName) {
       const meta = {};
-      const patterns = {
-        id: /id\\s*:\\s*['\"]([^'\"]+)['\"]/,
-        name: /name\\s*:\\s*['\"]([^'\"]+)['\"]/,
-        version: /version\\s*:\\s*['\"]([^'\"]+)['\"]/,
-        author: /author\\s*:\\s*['\"]([^'\"]+)['\"]/,
-        description: /description\\s*:\\s*['\"]([^'\"]+)['\"]|\\/\\/\\s*描述[：:]\s*(.+)/
-      };
+      
+      // 提取 ID
+      const idMatch = code.match(/id\s*[:=]\s*['"`]([^'"`]+)['"`]/i);
+      if (idMatch) meta.id = idMatch[1];
 
-      for (const [key, pattern] of Object.entries(patterns)) {
-        const match = code.match(pattern);
-        if (match) {
-          meta[key] = match[1] || match[2] || "";
-        }
-      }
+      // 提取名称
+      const nameMatch = code.match(/name\s*[:=]\s*['"`]([^'"`]+)['"`]/i);
+      if (nameMatch) meta.name = nameMatch[1];
 
-      if (!meta.name && filename) {
-        meta.name = filename.replace(/\\.js$/, "").replace(/[-_]/g, " ");
-      }
+      // 提取版本
+      const versionMatch = code.match(/version\s*[:=]\s*['"`]([^'"`]+)['"`]/i);
+      if (versionMatch) meta.version = versionMatch[1];
+
+      // 提取作者
+      const authorMatch = code.match(/author\s*[:=]\s*['"`]([^'"`]+)['"`]/i);
+      if (authorMatch) meta.author = authorMatch[1];
+
+      // 提取描述
+      const descMatch = code.match(/description\s*[:=]\s*['"`]([^'"`]+)['"`]/i);
+      if (descMatch) meta.description = descMatch[1];
 
       return meta;
     }
 
-    function escapeComment(str) {
-      return (str || "").replace(/\\/\\*|\\*\\//g, "");
-    }
-
     function jsString(str) {
-      return JSON.stringify(str || "");
+      return JSON.stringify(String(str || ""));
     }
 
     function escapeHtml(str) {
-      const div = document.createElement("div");
-      div.textContent = str;
-      return div.innerHTML;
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return String(str || "").replace(/[&<>"']/g, c => map[c]);
     }
 
-    function sanitizeFileName(name) {
-      return name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    function escapeComment(str) {
+      return String(str || "").replace(/\*\//g, '* /').replace(/\n/g, ' ');
     }
 
     function formatSize(bytes) {
-      if (bytes === 0) return "0 B";
+      if (bytes === 0) return '0 B';
       const k = 1024;
-      const sizes = ["B", "KB", "MB"];
+      const sizes = ['B', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
 
-    function indentCode(code, spaces) {
-      const indent = " ".repeat(spaces);
-      return code.split("\\n").map(line => indent + line).join("\\n");
+    function sanitizeFileName(name) {
+      return name.replace(/[^\w\-\.]/g, '_').substring(0, 255);
     }
 
-    function setStatus(msg, type = "info") {
+    function setStatus(msg, type = "normal") {
       statusEl.textContent = msg;
-      statusEl.className = "status " + type;
+      statusEl.className = `status ${type}`;
+      setTimeout(() => {
+        statusEl.className = "status";
+      }, 5000);
     }
   </script>
 </body>
