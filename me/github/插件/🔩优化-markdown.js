@@ -1,23 +1,22 @@
-
+// ========== 插件：Markdown 优化解析（极速请求）==========
+// 功能：
 // 1. Markdown 使用 marked + DOMPurify 渲染
 // 2. Markdown 图片相对路径自动补全 raw.githubusercontent.com
 // 3. Markdown 普通链接自动补全 github.com/.../blob/...
 // 4. HTML 图片标签 <img src="assets/a.png"> 自动补全 raw 链接
 // 5. HTML 跳转 <a href="docs/a.md"> 自动补全 blob 链接
-// 6. 文件夹 README 自动预览
-// 7. 表格纯灰色
+// 6. 文件夹 README 自动预览修复
+// 7. 表格纯灰色，无白色/斑马纹
 // 8. AI 输出 Markdown 预览
 // 9. 支持 highlight.js / KaTeX / Mermaid 按需加载
 // 10. 优化 `行内代码` 自动换行问题，代码块横向滚动
-// 11. 右侧标题树目录 
-// 12. 目录面板大小与 GitHub 面板主内容区自动对齐
 
 plugin.id = "plugin.markdown.enhanced.fast";
 plugin.name = "Markdown 优化解析（极速请求）";
-plugin.version = "1.3.9";
-plugin.author = "ChatGPT&gemini &deepseek&yuan";
-plugin.description = ".md / .markdown / README 预览优化，支持图片/链接补全、AI Markdown 预览、标题树目录、面板自适应。";
-plugin.tags = ["markdown优化", "推荐", "marked"];
+plugin.version = "1.3.7";
+plugin.author = "ChatGPT";
+plugin.description = ".md / .markdown / README 预览优化，支持 Markdown 与 HTML 图片/链接自动补全，修复行内代码换行。";
+plugin.tags = ["markdown优化", "推荐", "marked", "ai", "md", "markdown", "图片路径", "链接补全", "html-img", "代码不换行"];
 
 plugin.init = (ctx) => {
   plugin._ctx = ctx;
@@ -65,14 +64,11 @@ plugin.init = (ctx) => {
 
     observer: null,
     enhanceScheduled: false,
-    preconnectDone: false,
-    tocResizeHandler: null,
-    resizeObserver: null
+    preconnectDone: false
   };
 
   plugin._injectPanelThemeCss();
   plugin._ensureInjectedButton();
-  plugin._installPanelSizeSync();   
   plugin._tryAutoInstall();
 };
 
@@ -106,8 +102,8 @@ plugin._ensureInjectedButton = () => {
         await plugin._install(false);
 
         alert(plugin._state.ok
-          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。\n`行内代码` 不自动换行已优化。\n右侧目录已启用。"
-          : `启用失败（已回退:刷新网页3次）：${plugin._state.failReason || "未知原因"}`);
+          ? "Markdown 极速解析已启用。\n图片/跳转链接自动补全已启用。\nHTML <img src> 路径补全已启用。\n文件夹 README 自动预览已修复。\nAI 输出 Markdown 预览已接管。\n`行内代码` 不自动换行已优化。"
+          : `启用失败（已回退）：${plugin._state.failReason || "未知原因"}`);
 
         return;
       }
@@ -1438,16 +1434,6 @@ plugin._enhanceOne = async (root) => {
   if (window.mermaid && typeof window.mermaid.render === "function") {
     await plugin._renderMermaidIn(root);
   }
-
-  // 标题树目录生成
-  try {
-    plugin._buildHeadingToc(root);
-  } catch (e) {
-    console.warn("[MDX TOC] build failed:", e);
-  }
-
-  // 同步目录面板大小
-  plugin._syncTocPanelSize();
 };
 
 plugin._renderMermaidIn = async (root) => {
@@ -1478,8 +1464,55 @@ plugin._renderMermaidIn = async (root) => {
     } catch {}
   }
 };
+// ============================================================
+// ========== Markdown 优化解析：右侧标题树目录补丁 ==========
+// 版本建议：1.3.8
+// 功能：
+// 1. 自动生成 h1~h6 标题树
+// 2. h6 折叠到 h5，h5 折叠到 h4，以此类推
+// 3. 点击目录项平滑滚动到标题
+// 4. 超过 10 个标题时目录独立滚动
+// 5. 右侧目录可最小化
+// 6. 支持 Markdown 文件 / README / AI 输出 Markdown
+// ============================================================
 
-// ================= 标题树目录 =================
+plugin.version = "1.3.8";
+plugin.description = ".md / .markdown / README 预览优化，支持图片/链接补全、AI Markdown 预览、标题树目录。";
+
+plugin._mdxTocPatchInstalled = false;
+
+plugin._oldInitForToc = plugin.init;
+
+plugin.init = (ctx) => {
+  if (typeof plugin._oldInitForToc === "function") {
+    plugin._oldInitForToc(ctx);
+  }
+
+  plugin._installHeadingTocPatch();
+};
+
+plugin._installHeadingTocPatch = () => {
+  if (plugin._mdxTocPatchInstalled) return;
+  plugin._mdxTocPatchInstalled = true;
+
+  plugin._injectHeadingTocCss();
+
+  const oldEnhanceOne = plugin._enhanceOne;
+
+  plugin._enhanceOne = async function (root) {
+    try {
+      plugin._buildHeadingToc(root);
+    } catch (e) {
+      console.warn("[MDX TOC] build failed:", e);
+    }
+
+    if (typeof oldEnhanceOne === "function") {
+      return await oldEnhanceOne.call(plugin, root);
+    }
+  };
+};
+
+// ================= 目录 CSS =================
 
 plugin._injectHeadingTocCss = () => {
   try {
@@ -1676,6 +1709,8 @@ plugin._injectHeadingTocCss = () => {
 
   document.head.appendChild(style);
 };
+
+// ================= 标题树逻辑 =================
 
 plugin._slugForHeading = (text, index) => {
   const base = String(text || "")
@@ -1894,67 +1929,5 @@ plugin._renderHeadingNodes = (nodes, parentUl) => {
   }
 };
 
-// ================= 面板大小自适应 =================
 
-plugin._installPanelSizeSync = function() {
-  if (plugin._state.tocResizeHandler) return;
-  plugin._state.tocResizeHandler = () => plugin._syncTocPanelSize();
-  window.addEventListener('resize', plugin._state.tocResizeHandler);
 
-  const panel = plugin._ctx?.ui?.panel || plugin._ctx?.extension?.ui?.panel;
-  if (panel && window.ResizeObserver) {
-    plugin._state.resizeObserver = new ResizeObserver(() => plugin._syncTocPanelSize());
-    plugin._state.resizeObserver.observe(panel);
-  }
-
-  // 每 1 秒额外兜底
-  setInterval(() => plugin._syncTocPanelSize(), 1000);
-};
-
-plugin._syncTocPanelSize = function() {
-  const roots = document.querySelectorAll('.mdx-enhanced-root[data-mdx-enhanced="1"]');
-  if (!roots.length) return;
-
-  const ctx = plugin._ctx;
-  const mainArea = ctx?.ui?.mainArea;
-  if (!mainArea) return;
-
-  const mainHeight = mainArea.clientHeight;
-  if (mainHeight <= 0) return;
-
-  const panelWidth = ctx?.ui?.panel?.clientWidth || 720;
-  let tocWidth = Math.min(300, Math.max(240, panelWidth * 0.32));
-  tocWidth = Math.floor(tocWidth);
-
-  for (const root of roots) {
-    const tocPanel = root.querySelector(':scope > .mdx-toc-panel');
-    if (!tocPanel) continue;
-
-    tocPanel.style.width = `${tocWidth}px`;
-    tocPanel.style.maxWidth = 'none';
-
-    const maxHeight = Math.max(150, mainHeight - 20);
-    tocPanel.style.maxHeight = `${maxHeight}px`;
-
-    const body = tocPanel.querySelector('.mdx-toc-body');
-    if (body) {
-      const needScroll = body.scrollHeight > maxHeight - 50;
-      if (needScroll && !tocPanel.classList.contains('mdx-toc-scroll')) {
-        tocPanel.classList.add('mdx-toc-scroll');
-      } else if (!needScroll && tocPanel.classList.contains('mdx-toc-scroll')) {
-        tocPanel.classList.remove('mdx-toc-scroll');
-      }
-    }
-  }
-};
-
-plugin._cleanupPanelSize = function() {
-  if (plugin._state.tocResizeHandler) {
-    window.removeEventListener('resize', plugin._state.tocResizeHandler);
-    plugin._state.tocResizeHandler = null;
-  }
-  if (plugin._state.resizeObserver) {
-    plugin._state.resizeObserver.disconnect();
-    plugin._state.resizeObserver = null;
-  }
-};
