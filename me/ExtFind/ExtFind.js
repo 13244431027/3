@@ -1,4 +1,6 @@
 // ExtFind 扩展
+//如果不觉得是AI的话，那就是真的
+//鬼知道我调试多久
 (function (Scratch) {
   'use strict';
 
@@ -8,7 +10,6 @@
   class ExtFindUnified {
     constructor() {
       this.extensions = [];
-      this.mdReady = false;
       this.activeTab = 'store';
 
       this.storeSort = 'latest';
@@ -23,6 +24,9 @@
       this.pendingLoaderId = '';
       this.currentLoaderId = '';
 
+      this.mdReady = false;
+      this.codeRenderJobId = 0;
+
       this.injectStyles();
       this.initMarkdown();
       this.createUI();
@@ -34,399 +38,413 @@
       const style = document.createElement('style');
       style.id = 'extfind-unified-styles';
       style.textContent = `
-        .extfind-panel {
-          position: fixed;
-          top: 10px;
-          left: 10px;
-          right: 10px;
-          bottom: 10px;
-          z-index: 2147483647;
-          display: none;
-          background: rgba(13,17,23,.98);
-          color: #e6edf3;
-          border-radius: 16px;
-          border: 1px solid rgba(255,255,255,.1);
-          box-shadow: 0 8px 32px rgba(0,0,0,.45);
-          backdrop-filter: blur(4px);
-          font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-          overflow: hidden;
+        .extfind-panel{
+          position:fixed;
+          inset:10px;
+          z-index:2147483647;
+          display:none;
+          background:rgba(13,17,23,.98);
+          color:#e6edf3;
+          border-radius:16px;
+          border:1px solid rgba(255,255,255,.1);
+          box-shadow:0 8px 32px rgba(0,0,0,.45);
+          backdrop-filter:blur(4px);
+          font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+          overflow:hidden;
         }
 
-        .extfind-header {
-          height: 56px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 16px;
-          border-bottom: 1px solid #30363d;
-          background: #161b22;
-          box-sizing: border-box;
-          gap: 10px;
+        .extfind-header{
+          height:56px;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          padding:0 16px;
+          border-bottom:1px solid #30363d;
+          background:#161b22;
+          box-sizing:border-box;
         }
 
-        .extfind-title {
-          font-size: 18px;
-          font-weight: 800;
-          white-space: nowrap;
+        .extfind-title{
+          font-size:18px;
+          font-weight:800;
+          white-space:nowrap;
         }
 
-        .extfind-tabs {
-          display: flex;
-          gap: 8px;
+        .extfind-tabs{
+          display:flex;
+          gap:8px;
         }
 
-        .extfind-tab {
-          border: 1px solid #30363d;
-          background: #21262d;
-          color: #c9d1d9;
-          padding: 6px 13px;
-          border-radius: 999px;
-          cursor: pointer;
-          font-weight: 700;
-          font-family: inherit;
-          font-size: 14px;
+        .extfind-tab{
+          border:1px solid #30363d;
+          background:#21262d;
+          color:#c9d1d9;
+          padding:6px 13px;
+          border-radius:999px;
+          cursor:pointer;
+          font-weight:700;
+          font-family:inherit;
+          font-size:14px;
         }
 
-        .extfind-tab.active {
-          background: #238636;
-          color: white;
-          border-color: #2ea043;
+        .extfind-tab.active{
+          background:#238636;
+          color:white;
+          border-color:#2ea043;
         }
 
-        .extfind-close {
-          border: 0;
-          background: #da3633;
-          color: white;
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          cursor: pointer;
-          font-size: 16px;
-          flex-shrink: 0;
+        .extfind-close{
+          border:0;
+          background:#da3633;
+          color:white;
+          width:32px;
+          height:32px;
+          border-radius:50%;
+          cursor:pointer;
+          font-size:16px;
+          flex-shrink:0;
         }
 
-        .extfind-content {
-          height: calc(100% - 56px);
-          overflow: auto;
-          padding: 18px;
-          box-sizing: border-box;
+        .extfind-content{
+          height:calc(100% - 56px);
+          overflow:auto;
+          padding:18px;
+          box-sizing:border-box;
         }
 
-        .extfind-card {
-          background: rgba(22,27,34,.8);
-          border: 1px solid #30363d;
-          border-radius: 12px;
-          padding: 14px;
-          cursor: pointer;
-          transition: .2s;
+        .extfind-card{
+          background:rgba(22,27,34,.8);
+          border:1px solid #30363d;
+          border-radius:12px;
+          padding:14px;
+          cursor:pointer;
+          transition:.2s;
         }
 
-        .extfind-card:hover {
-          border-color: #58a6ff;
-          background: rgba(33,38,45,.9);
+        .extfind-card:hover{
+          border-color:#58a6ff;
+          background:rgba(33,38,45,.9);
         }
 
-        .extfind-button {
-          background: #21262d;
-          color: #c9d1d9;
-          border: 1px solid #30363d;
-          padding: 7px 12px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 700;
-          font-size: 13px;
-          font-family: inherit;
-          line-height: 1.2;
+        .extfind-button{
+          background:#21262d;
+          color:#c9d1d9;
+          border:1px solid #30363d;
+          padding:7px 12px;
+          border-radius:8px;
+          cursor:pointer;
+          font-weight:700;
+          font-size:13px;
+          font-family:inherit;
+          line-height:1.2;
         }
 
-        .extfind-button:hover {
-          background: #30363d;
+        .extfind-button:hover{
+          background:#30363d;
         }
 
-        .extfind-button:disabled {
-          opacity: .45;
-          cursor: not-allowed;
+        .extfind-button:disabled{
+          opacity:.45;
+          cursor:not-allowed;
         }
 
-        .extfind-button.primary {
-          background: #238636;
-          border-color: #2ea043;
-          color: white;
+        .extfind-button.primary{
+          background:#238636;
+          border-color:#2ea043;
+          color:white;
         }
 
         .extfind-input,
-        .extfind-select {
-          box-sizing: border-box;
-          background: #0d1117;
-          color: #e6edf3;
-          border: 1px solid #30363d;
-          border-radius: 8px;
-          padding: 7px 9px;
-          font: inherit;
-          font-size: 13px;
-          outline: none;
+        .extfind-select{
+          box-sizing:border-box;
+          background:#0d1117;
+          color:#e6edf3;
+          border:1px solid #30363d;
+          border-radius:8px;
+          padding:7px 9px;
+          font:inherit;
+          font-size:13px;
+          outline:none;
         }
 
         .extfind-input:focus,
-        .extfind-select:focus {
-          border-color: #58a6ff;
-          box-shadow: 0 0 0 2px rgba(88,166,255,.18);
+        .extfind-select:focus{
+          border-color:#58a6ff;
+          box-shadow:0 0 0 2px rgba(88,166,255,.18);
         }
 
-        .extfind-toolbar {
-          max-width: 900px;
-          margin: 0 auto 12px auto;
-          padding: 10px;
-          background: #161b22;
-          border: 1px solid #30363d;
-          border-radius: 12px;
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
+        .extfind-toolbar{
+          max-width:900px;
+          margin:0 auto 12px auto;
+          padding:10px;
+          background:#161b22;
+          border:1px solid #30363d;
+          border-radius:12px;
+          display:flex;
+          flex-wrap:wrap;
+          align-items:center;
+          justify-content:center;
+          gap:7px;
         }
 
         .extfind-toolbar label,
-        .extfind-toolbar span {
-          color: #8b949e;
-          font-size: 12px;
+        .extfind-toolbar span{
+          color:#8b949e;
+          font-size:12px;
         }
 
-        .extfind-sort-select {
-          width: 105px;
+        .extfind-sort-select{width:105px;}
+        .extfind-size-select{width:64px;}
+        .extfind-page-input{width:56px;text-align:center;}
+
+        .extfind-loader-box{
+          max-width:720px;
+          margin:0 auto;
+          background:#161b22;
+          border:1px solid #30363d;
+          border-radius:16px;
+          padding:18px;
         }
 
-        .extfind-size-select {
-          width: 64px;
+        .extfind-status{
+          margin-top:12px;
+          color:#8b949e;
+          font-size:13px;
+          min-height:20px;
         }
 
-        .extfind-page-input {
-          width: 56px;
-          text-align: center;
+        .extfind-loader-card{
+          margin-top:16px;
+          border:1px solid #30363d;
+          border-radius:12px;
+          padding:14px;
+          background:#0d1117;
+          display:none;
         }
 
-        .extfind-loader-box {
-          max-width: 720px;
-          margin: 0 auto;
-          background: #161b22;
-          border: 1px solid #30363d;
-          border-radius: 16px;
-          padding: 18px;
+        .extfind-badge{
+          display:inline-block;
+          padding:2px 6px;
+          border-radius:999px;
+          font-size:11px;
+          font-weight:700;
+          background:rgba(63,185,80,.15);
+          color:#3fb950;
+          border:1px solid rgba(63,185,80,.35);
+          margin-left:6px;
         }
 
-        .extfind-status {
-          margin-top: 12px;
-          color: #8b949e;
-          font-size: 13px;
-          min-height: 20px;
+        .extfind-file-row{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:8px;
+          padding:8px 10px;
+          border:1px solid #30363d;
+          border-radius:8px;
+          background:#0d1117;
+          margin-top:8px;
         }
 
-        .extfind-loader-card {
-          margin-top: 16px;
-          border: 1px solid #30363d;
-          border-radius: 12px;
-          padding: 14px;
-          background: #0d1117;
-          display: none;
+        .extfind-file-name{
+          color:#e6edf3;
+          font-size:13px;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
         }
 
-        .extfind-badge {
-          display: inline-block;
-          padding: 2px 6px;
-          border-radius: 999px;
-          font-size: 11px;
-          font-weight: 700;
-          background: rgba(63,185,80,.15);
-          color: #3fb950;
-          border: 1px solid rgba(63,185,80,.35);
-          margin-left: 6px;
+        .extfind-file-meta{
+          color:#8b949e;
+          font-size:11px;
+          margin-left:6px;
         }
 
-        .extfind-file-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          padding: 8px 10px;
-          border: 1px solid #30363d;
-          border-radius: 8px;
-          background: #0d1117;
-          margin-top: 8px;
+        .extfind-code-overlay{
+          position:absolute;
+          left:0;
+          right:0;
+          top:56px;
+          bottom:0;
+          z-index:30;
+          background:rgba(13,17,23,.99);
+          display:flex;
+          flex-direction:column;
+          overflow:hidden;
         }
 
-        .extfind-file-name {
-          color: #e6edf3;
-          font-size: 13px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+        .extfind-code-header{
+          flex-shrink:0;
+          padding:10px 14px;
+          border-bottom:1px solid #30363d;
+          background:#161b22;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
         }
 
-        .extfind-file-meta {
-          color: #8b949e;
-          font-size: 11px;
-          margin-left: 6px;
+        .extfind-code-title{
+          font-weight:800;
+          color:#e6edf3;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
+          font-size:14px;
         }
 
-        .extfind-code-overlay {
-          position: absolute;
-          left: 0;
-          right: 0;
-          top: 56px;
-          bottom: 0;
-          z-index: 30;
-          background: rgba(13,17,23,.99);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
+        .extfind-code-actions{
+          display:flex;
+          gap:7px;
+          flex-shrink:0;
+          flex-wrap:wrap;
+          justify-content:flex-end;
         }
 
-        .extfind-code-header {
-          flex-shrink: 0;
-          padding: 10px 14px;
-          border-bottom: 1px solid #30363d;
-          background: #161b22;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
+        .extfind-code-body{
+          flex:1;
+          overflow:auto;
+          background:#0d1117;
+          padding:14px;
         }
 
-        .extfind-code-title {
-          font-weight: 800;
-          color: #e6edf3;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          font-size: 14px;
+        .extfind-code-body pre{
+          margin:0;
+          background:#0d1117!important;
+          color:#e6edf3;
+          font-size:12px;
+          line-height:1.5;
+          font-family:"SF Mono","Monaco","Inconsolata","Fira Code",monospace;
+          white-space:pre;
         }
 
-        .extfind-code-actions {
-          display: flex;
-          gap: 7px;
-          flex-shrink: 0;
-          flex-wrap: wrap;
-          justify-content: flex-end;
+        .extfind-code-body code{
+          background:transparent!important;
+          color:#e6edf3;
         }
 
-        .extfind-code-body {
-          flex: 1;
-          overflow: auto;
-          background: #0d1117;
-          padding: 14px;
+        .extfind-code-progress{
+          padding:8px 10px;
+          margin-bottom:10px;
+          border:1px solid #30363d;
+          border-radius:8px;
+          background:#161b22;
+          color:#8b949e;
+          font-size:12px;
+          line-height:1.4;
         }
 
-        .extfind-code-body pre {
-          margin: 0;
-          background: #0d1117 !important;
-          color: #e6edf3;
-          font-size: 13px;
-          line-height: 1.55;
-          font-family: "SF Mono","Monaco","Inconsolata","Fira Code",monospace;
-          white-space: pre;
+        .extfind-code-large-tip{
+          color:#f0b7b5;
+          border-color:rgba(248,81,73,.35);
+          background:rgba(248,81,73,.08);
         }
 
-        .extfind-code-body code {
-          background: transparent !important;
-          color: #e6edf3;
+        .extfind-code-perf{
+          padding:8px 10px;
+          margin-bottom:10px;
+          border:1px solid #30363d;
+          border-radius:8px;
+          background:#161b22;
+          color:#8b949e;
+          font-size:12px;
+          line-height:1.5;
         }
 
-        .markdown-body {
-          color-scheme: dark !important;
-          background: transparent !important;
-          color: #e6edf3 !important;
+        .extfind-code-perf strong{
+          color:#e6edf3;
         }
 
-        .markdown-body table {
-          background-color: #0d1117 !important;
-          border-collapse: collapse !important;
-          width: 100% !important;
-          border: 1px solid #30363d !important;
+        .extfind-code-perf.good{
+          border-color:rgba(63,185,80,.35);
+          background:rgba(63,185,80,.08);
+        }
+
+        .extfind-code-perf.warn{
+          border-color:rgba(210,153,34,.4);
+          background:rgba(210,153,34,.08);
+        }
+
+        .extfind-code-perf.danger{
+          border-color:rgba(248,81,73,.4);
+          background:rgba(248,81,73,.08);
+          color:#f0b7b5;
+        }
+
+        .markdown-body{
+          color-scheme:dark!important;
+          background:transparent!important;
+          color:#e6edf3!important;
+        }
+
+        .markdown-body table{
+          background-color:#0d1117!important;
+          border-collapse:collapse!important;
+          width:100%!important;
+          border:1px solid #30363d!important;
         }
 
         .markdown-body th,
-        .markdown-body td {
-          background-color: #0d1117 !important;
-          border: 1px solid #30363d !important;
-          color: #e6edf3 !important;
-          padding: 8px 12px !important;
+        .markdown-body td{
+          background-color:#0d1117!important;
+          border:1px solid #30363d!important;
+          color:#e6edf3!important;
+          padding:8px 12px!important;
         }
 
-        .markdown-body th {
-          background-color: #161b22 !important;
+        .markdown-body th{
+          background-color:#161b22!important;
         }
 
-        .markdown-body pre {
-          background-color: #0d1117 !important;
-          border: 1px solid #30363d !important;
-          border-radius: 8px !important;
-          padding: 12px !important;
-          overflow-x: auto !important;
+        .markdown-body pre{
+          background-color:#0d1117!important;
+          border:1px solid #30363d!important;
+          border-radius:8px!important;
+          padding:12px!important;
+          overflow-x:auto!important;
         }
 
-        .markdown-body pre code {
-          background-color: transparent !important;
-          color: #e6edf3 !important;
-          font-size: 13px !important;
-          white-space: pre !important;
+        .markdown-body pre code{
+          background-color:transparent!important;
+          color:#e6edf3!important;
+          font-size:13px!important;
+          white-space:pre!important;
         }
 
-        .markdown-body code:not(pre code) {
-          background-color: rgba(110,118,129,.4) !important;
-          color: #f0883e !important;
-          padding: .2em .4em !important;
-          border-radius: 4px !important;
+        .markdown-body code:not(pre code){
+          background-color:rgba(110,118,129,.4)!important;
+          color:#f0883e!important;
+          padding:.2em .4em!important;
+          border-radius:4px!important;
         }
 
-        .markdown-body .hljs {
-          background: transparent !important;
-          color: #e6edf3 !important;
+        .markdown-body .hljs{
+          background:transparent!important;
+          color:#e6edf3!important;
         }
 
-        .markdown-body a {
-          color: #58a6ff !important;
+        .markdown-body a{
+          color:#58a6ff!important;
         }
 
-        .markdown-body blockquote {
-          border-left-color: #3fb950 !important;
-          background-color: rgba(63,185,80,.1) !important;
-          color: #e6edf3 !important;
+        .markdown-body blockquote{
+          border-left-color:#3fb950!important;
+          background-color:rgba(63,185,80,.1)!important;
+          color:#e6edf3!important;
         }
 
-        @media (max-width: 640px) {
-          .extfind-header {
-            padding: 0 10px;
-          }
-
-          .extfind-title {
-            font-size: 15px;
-          }
-
-          .extfind-tab {
-            padding: 5px 9px;
-            font-size: 12px;
-          }
-
-          .extfind-content {
-            padding: 12px;
-          }
-
-          .extfind-toolbar {
-            justify-content: flex-start;
-          }
-
-          .extfind-button {
-            font-size: 12px;
-            padding: 6px 9px;
-          }
-
-          .extfind-code-header {
-            align-items: flex-start;
-            flex-direction: column;
-          }
+        @media (max-width:640px){
+          .extfind-header{padding:0 10px;}
+          .extfind-title{font-size:15px;}
+          .extfind-tab{padding:5px 9px;font-size:12px;}
+          .extfind-content{padding:12px;}
+          .extfind-toolbar{justify-content:flex-start;}
+          .extfind-button{font-size:12px;padding:6px 9px;}
+          .extfind-code-header{align-items:flex-start;flex-direction:column;}
         }
       `;
+
       document.head.appendChild(style);
     }
 
@@ -451,8 +469,8 @@
         }
 
         this.mdReady = true;
-      } catch (e) {
-        console.warn('[ExtFind] Markdown 加载失败:', e);
+      } catch (error) {
+        console.warn('[ExtFind] Markdown/Highlight 加载失败:', error);
         this.mdReady = false;
       }
     }
@@ -483,19 +501,20 @@
       });
     }
 
-    escapeHtml(str) {
-      if (str === null || str === undefined) return '';
-      return String(str).replace(/[&<>"']/g, m => ({
+    escapeHtml(value) {
+      if (value === null || value === undefined) return '';
+
+      return String(value).replace(/[&<>"']/g, char => ({
         '&': '&amp;',
         '<': '&lt;',
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#39;'
-      }[m]));
+      }[char]));
     }
 
-    escapeAttr(str) {
-      return this.escapeHtml(str);
+    escapeAttr(value) {
+      return this.escapeHtml(value);
     }
 
     renderMarkdown(text) {
@@ -538,7 +557,7 @@
             ${clean}
           </div>
         `;
-      } catch (e) {
+      } catch {
         return `<pre style="white-space:pre-wrap;">${this.escapeHtml(text)}</pre>`;
       }
     }
@@ -546,6 +565,7 @@
     createUI() {
       this.container = document.createElement('div');
       this.container.className = 'extfind-panel';
+
       this.container.innerHTML = `
         <div class="extfind-header">
           <div class="extfind-title">ExtFind</div>
@@ -567,20 +587,22 @@
         this.hideUI();
       });
 
-      this.container.querySelectorAll('.extfind-tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this.switchTab(btn.dataset.tab);
+      this.container.querySelectorAll('.extfind-tab').forEach(button => {
+        button.addEventListener('click', () => {
+          this.switchTab(button.dataset.tab);
         });
       });
 
       this.contentArea.addEventListener('click', async event => {
-        const codeBtn = event.target.closest('[data-extfind-view-code]');
-        if (codeBtn) {
+        const codeButton = event.target.closest('[data-extfind-view-code]');
+        if (codeButton) {
           event.stopPropagation();
+
           await this.openCodeViewer(
-            codeBtn.dataset.extfindViewCode,
-            codeBtn.dataset.fileName || '扩展文件'
+            codeButton.dataset.extfindViewCode,
+            codeButton.dataset.fileName || '扩展文件'
           );
+
           return;
         }
 
@@ -657,8 +679,8 @@
     switchTab(tab) {
       this.activeTab = tab;
 
-      this.container.querySelectorAll('.extfind-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tab);
+      this.container.querySelectorAll('.extfind-tab').forEach(button => {
+        button.classList.toggle('active', button.dataset.tab === tab);
       });
 
       if (tab === 'store') {
@@ -751,6 +773,7 @@
               <div style="flex:1;min-width:0;">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
                   <h3 style="margin:0;font-size:17px;color:#e6edf3;">${this.escapeHtml(ext.name)}</h3>
+
                   <div style="display:flex;gap:10px;font-size:12px;">
                     <span style="color:#f0883e;">点赞 ${ext.likeCount || 0}</span>
                     <span style="color:#8b949e;">下载 ${ext.downloadCount || 0}</span>
@@ -837,6 +860,7 @@
       let target = Number(page);
 
       if (!Number.isFinite(target) || target < 1) target = 1;
+
       if (this.storeHasRealTotal && target > this.storeTotalPages) {
         target = this.storeTotalPages;
       }
@@ -971,8 +995,8 @@
           </div>
         `;
 
-        const loadBtn = this.contentArea.querySelector('[data-extfind-load-id]');
-        loadBtn?.addEventListener('click', () => {
+        const loadButton = this.contentArea.querySelector('[data-extfind-load-id]');
+        loadButton?.addEventListener('click', () => {
           this.openLoaderWithId(ext.extensionId);
         });
       } catch (error) {
@@ -994,74 +1018,485 @@
       const old = this.container.querySelector('.extfind-code-overlay');
       if (old) old.remove();
 
+      this.codeRenderJobId++;
+      const jobId = this.codeRenderJobId;
+
       const rawUrl = `${API_BASE}/files/${encodeURIComponent(fileId)}/load.js`;
 
       const overlay = document.createElement('div');
       overlay.className = 'extfind-code-overlay';
+
       overlay.innerHTML = `
         <div class="extfind-code-header">
           <div class="extfind-code-title">正在加载代码：${this.escapeHtml(fileName)}</div>
 
           <div class="extfind-code-actions">
             <button class="extfind-button" data-extfind-open-raw>原始文件</button>
+            <button class="extfind-button" data-extfind-enable-highlight disabled>开启高亮</button>
             <button class="extfind-button" data-extfind-copy-code disabled>复制代码</button>
             <button class="extfind-button" data-extfind-close-code>关闭</button>
           </div>
         </div>
 
         <div class="extfind-code-body">
-          <pre><code class="language-javascript">正在加载...</code></pre>
+          <div class="extfind-code-progress">准备加载...</div>
+          <div class="extfind-code-perf">性能信息等待加载...</div>
+          <pre><code class="language-javascript"></code></pre>
         </div>
       `;
 
       this.container.appendChild(overlay);
 
       const titleEl = overlay.querySelector('.extfind-code-title');
+      const progressEl = overlay.querySelector('.extfind-code-progress');
+      const perfEl = overlay.querySelector('.extfind-code-perf');
       const codeEl = overlay.querySelector('code');
-      const copyBtn = overlay.querySelector('[data-extfind-copy-code]');
-      const closeBtn = overlay.querySelector('[data-extfind-close-code]');
-      const rawBtn = overlay.querySelector('[data-extfind-open-raw]');
+
+      const copyButton = overlay.querySelector('[data-extfind-copy-code]');
+      const closeButton = overlay.querySelector('[data-extfind-close-code]');
+      const rawButton = overlay.querySelector('[data-extfind-open-raw]');
+      const highlightButton = overlay.querySelector('[data-extfind-enable-highlight]');
 
       let sourceCode = '';
+      let closed = false;
+      let loadedBytes = 0;
+      let highlighted = false;
 
-      closeBtn.addEventListener('click', () => overlay.remove());
+      const autoHighlightLimit = 20 * 1024;
 
-      rawBtn.addEventListener('click', () => {
+      const isCurrentJob = () => {
+        return !closed && this.codeRenderJobId === jobId && overlay.isConnected;
+      };
+
+      closeButton.addEventListener('click', () => {
+        closed = true;
+        this.codeRenderJobId++;
+        overlay.remove();
+      });
+
+      rawButton.addEventListener('click', () => {
         window.open(rawUrl, '_blank');
       });
 
-      copyBtn.addEventListener('click', async () => {
+      copyButton.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(sourceCode);
-          copyBtn.textContent = '已复制';
-          setTimeout(() => copyBtn.textContent = '复制代码', 1000);
+          copyButton.textContent = '已复制';
+
+          setTimeout(() => {
+            if (copyButton.isConnected) copyButton.textContent = '复制代码';
+          }, 1000);
         } catch {
-          copyBtn.textContent = '复制失败';
-          setTimeout(() => copyBtn.textContent = '复制代码', 1000);
+          copyButton.textContent = '复制失败';
+
+          setTimeout(() => {
+            if (copyButton.isConnected) copyButton.textContent = '复制代码';
+          }, 1000);
+        }
+      });
+
+      highlightButton.addEventListener('click', async () => {
+        if (!sourceCode || highlighted || !isCurrentJob()) return;
+
+        const lineCount = this.countLinesFast(sourceCode);
+        const size = sourceCode.length;
+        const isLarge = size > autoHighlightLimit;
+
+        if (isLarge) {
+          const ok = confirm(
+            `当前代码大小为 ${this.formatBytes(size)}，超过 20KB。\n\n` +
+            `语法高亮会占用较高 CPU，并创建大量 DOM 节点，可能导致短暂卡顿。\n\n` +
+            `是否仍然开启高亮？`
+          );
+
+          if (!ok) return;
+        }
+
+        highlightButton.disabled = true;
+        highlightButton.textContent = '高亮中...';
+        progressEl.textContent = `正在执行语法高亮，CPU 占用可能升高...`;
+
+        await this.nextFrame();
+
+        if (!isCurrentJob()) return;
+
+        try {
+          const start = performance.now();
+
+          if (window.hljs) {
+            window.hljs.highlightElement(codeEl);
+          } else {
+            throw new Error('highlight.js 未加载');
+          }
+
+          const cost = performance.now() - start;
+
+          highlighted = true;
+          highlightButton.textContent = '已高亮';
+
+          progressEl.textContent =
+            `高亮完成：耗时 ${cost.toFixed(0)}ms · ${this.formatBytes(size)} · ${lineCount} 行`;
+
+          this.updateCodePerfInfo(perfEl, {
+            codeSize: size,
+            lineCount,
+            highlighted: true,
+            highlightCost: cost,
+            autoHighlightLimit
+          });
+        } catch (error) {
+          console.error('高亮失败:', error);
+
+          highlightButton.disabled = false;
+          highlightButton.textContent = '重新高亮';
+
+          progressEl.classList.add('extfind-code-large-tip');
+          progressEl.textContent = `高亮失败：${error.message || '未知错误'}`;
         }
       });
 
       try {
         const response = await fetch(rawUrl);
-        if (!response.ok) throw new Error(`代码加载失败：${response.status}`);
 
-        sourceCode = await response.text();
+        if (!response.ok) {
+          throw new Error(`代码加载失败：${response.status}`);
+        }
 
-        titleEl.textContent = `代码浏览：${fileName}`;
-        codeEl.textContent = sourceCode;
-        copyBtn.disabled = false;
+        const contentLength = Number(response.headers.get('content-length') || 0);
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-        if (window.hljs) {
-          try {
-            window.hljs.highlightElement(codeEl);
-          } catch {}
+        if (contentLength > autoHighlightLimit) {
+          progressEl.classList.add('extfind-code-large-tip');
+          progressEl.textContent =
+            `文件超过 20KB，已自动关闭高亮。大小约：${this.formatBytes(contentLength)}。可手动点击“开启高亮”。`;
+        } else {
+          progressEl.textContent = contentLength
+            ? `正在加载：0 / ${this.formatBytes(contentLength)}`
+            : '正在加载...';
+        }
+
+        this.updateCodePerfInfo(perfEl, {
+          codeSize: contentLength,
+          lineCount: 0,
+          highlighted: false,
+          loading: true,
+          autoHighlightLimit
+        });
+
+        if (response.body && response.body.getReader) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+
+          let pendingText = '';
+          let lastUpdateTime = 0;
+
+          while (true) {
+            if (!isCurrentJob()) {
+              try {
+                await reader.cancel();
+              } catch {}
+              return;
+            }
+
+            const { done, value } = await reader.read();
+
+            if (done) {
+              const finalText = decoder.decode();
+              if (finalText) {
+                sourceCode += finalText;
+                pendingText += finalText;
+              }
+              break;
+            }
+
+            loadedBytes += value.byteLength;
+
+            const text = decoder.decode(value, { stream: true });
+            sourceCode += text;
+            pendingText += text;
+
+            const now = Date.now();
+
+            if (pendingText.length >= 32 * 1024 || now - lastUpdateTime > 30) {
+              const chunk = pendingText;
+              pendingText = '';
+              lastUpdateTime = now;
+
+              await this.appendCodeChunkAsync(codeEl, chunk, isCurrentJob);
+
+              if (!isCurrentJob()) return;
+
+              progressEl.textContent = contentLength
+                ? `正在加载：${this.formatBytes(loadedBytes)} / ${this.formatBytes(contentLength)}`
+                : `正在加载：${this.formatBytes(loadedBytes)}`;
+            }
+          }
+
+          if (pendingText) {
+            await this.appendCodeChunkAsync(codeEl, pendingText, isCurrentJob);
+          }
+        } else {
+          sourceCode = await response.text();
+          loadedBytes = sourceCode.length;
+
+          if (!isCurrentJob()) return;
+
+          await this.renderCodeAsync(codeEl, sourceCode, {
+            chunkSize: isMobile ? 8 * 1024 : 24 * 1024,
+            isCurrentJob,
+            onProgress: rendered => {
+              progressEl.textContent =
+                `正在渲染：${this.formatBytes(rendered)} / ${this.formatBytes(sourceCode.length)}`;
+            }
+          });
+        }
+
+        if (!isCurrentJob()) return;
+
+        copyButton.disabled = false;
+        highlightButton.disabled = false;
+
+        const lineCount = this.countLinesFast(sourceCode);
+        const codeSize = sourceCode.length;
+
+        titleEl.textContent =
+          `代码浏览：${fileName} · ${this.formatBytes(codeSize)} · ${lineCount} 行`;
+
+        const canAutoHighlight =
+          codeSize <= autoHighlightLimit &&
+          lineCount <= 1200 &&
+          window.hljs;
+
+        if (canAutoHighlight) {
+          progressEl.textContent =
+            `加载完成：${this.formatBytes(codeSize)} · 未超过 20KB，正在自动高亮...`;
+
+          highlightButton.textContent = '开启高亮';
+
+          await this.nextFrame();
+
+          if (isCurrentJob() && !highlighted) {
+            try {
+              const start = performance.now();
+
+              window.hljs.highlightElement(codeEl);
+
+              const cost = performance.now() - start;
+
+              highlighted = true;
+              highlightButton.disabled = true;
+              highlightButton.textContent = '已高亮';
+
+              progressEl.textContent =
+                `加载完成：${this.formatBytes(codeSize)} · 已自动高亮 · 耗时 ${cost.toFixed(0)}ms`;
+
+              this.updateCodePerfInfo(perfEl, {
+                codeSize,
+                lineCount,
+                highlighted: true,
+                highlightCost: cost,
+                autoHighlightLimit
+              });
+            } catch {
+              highlighted = false;
+              highlightButton.disabled = false;
+              highlightButton.textContent = '开启高亮';
+
+              progressEl.textContent =
+                `加载完成：${this.formatBytes(codeSize)} · 自动高亮失败，可手动重试`;
+
+              this.updateCodePerfInfo(perfEl, {
+                codeSize,
+                lineCount,
+                highlighted: false,
+                autoHighlightLimit
+              });
+            }
+          }
+        } else {
+          progressEl.classList.add('extfind-code-large-tip');
+          progressEl.textContent =
+            `加载完成：${this.formatBytes(codeSize)} · ${lineCount} 行 · 已关闭高亮，避免 CPU 占用过高`;
+
+          highlightButton.textContent = '开启高亮';
+
+          this.updateCodePerfInfo(perfEl, {
+            codeSize,
+            lineCount,
+            highlighted: false,
+            autoHighlightLimit
+          });
         }
       } catch (error) {
         console.error('代码浏览失败:', error);
+
+        if (!isCurrentJob()) return;
+
         titleEl.textContent = `代码浏览失败：${fileName}`;
-        codeEl.textContent = error.message || '代码加载失败';
-        copyBtn.disabled = true;
+        progressEl.classList.add('extfind-code-large-tip');
+        progressEl.textContent = error.message || '代码加载失败';
+        perfEl.className = 'extfind-code-perf danger';
+        perfEl.innerHTML = `性能信息不可用`;
+        codeEl.textContent = '';
+        copyButton.disabled = true;
+        highlightButton.disabled = true;
       }
+    }
+
+    nextFrame() {
+      return new Promise(resolve => {
+        requestAnimationFrame(() => resolve());
+      });
+    }
+
+    nextIdle(timeout = 50) {
+      return new Promise(resolve => {
+        if (window.requestIdleCallback) {
+          requestIdleCallback(() => resolve(), { timeout });
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+    }
+
+    async appendCodeChunkAsync(codeEl, text, isCurrentJob) {
+      if (!text || !isCurrentJob()) return;
+
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      const chunkSize = isMobile ? 8 * 1024 : 24 * 1024;
+
+      for (let i = 0; i < text.length; i += chunkSize) {
+        if (!isCurrentJob()) return;
+
+        const part = text.slice(i, i + chunkSize);
+        codeEl.appendChild(document.createTextNode(part));
+
+        await this.nextIdle(30);
+      }
+    }
+
+    async renderCodeAsync(codeEl, sourceCode, options = {}) {
+      const chunkSize = options.chunkSize || 24 * 1024;
+      const isCurrentJob = options.isCurrentJob || (() => true);
+      const onProgress = options.onProgress || (() => {});
+
+      codeEl.textContent = '';
+
+      let rendered = 0;
+
+      for (let i = 0; i < sourceCode.length; i += chunkSize) {
+        if (!isCurrentJob()) return;
+
+        const chunk = sourceCode.slice(i, i + chunkSize);
+        codeEl.appendChild(document.createTextNode(chunk));
+
+        rendered += chunk.length;
+        onProgress(rendered);
+
+        await this.nextIdle(30);
+      }
+    }
+
+    countLinesFast(text) {
+      if (!text) return 0;
+
+      let count = 1;
+
+      for (let i = 0; i < text.length; i++) {
+        if (text.charCodeAt(i) === 10) count++;
+      }
+
+      return count;
+    }
+
+    formatBytes(bytes) {
+      const n = Number(bytes) || 0;
+
+      if (n < 1024) return `${n} B`;
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+      return `${(n / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    getDevicePerfInfo(codeSize = 0, lineCount = 0, highlighted = false, highlightCost = 0, autoHighlightLimit = 20 * 1024) {
+      const cpuThreads = navigator.hardwareConcurrency || '未知';
+      const memory = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : '未知';
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+      let cpuLevel = '低';
+      let levelClass = 'good';
+
+      if (codeSize > autoHighlightLimit || lineCount > 1200) {
+        cpuLevel = '中';
+        levelClass = 'warn';
+      }
+
+      if (codeSize > 100 * 1024 || lineCount > 3000) {
+        cpuLevel = '高';
+        levelClass = 'danger';
+      }
+
+      if (highlighted && highlightCost > 300) {
+        cpuLevel = '高';
+        levelClass = 'danger';
+      }
+
+      const renderMode = highlighted
+        ? 'DOM + highlight.js 语法高亮'
+        : 'DOM 异步分片纯文本渲染';
+
+      const gpuInfo =
+        'CPU计算关我GPU啥事';
+
+      const highlightPolicy =
+        codeSize > autoHighlightLimit
+          ? '超过 20KB，自动高亮关闭(不关就卡死e)，如果需要可手动开启'
+          : '未超过 20KB，自动高亮';
+
+      return {
+        cpuThreads,
+        memory,
+        isMobile,
+        cpuLevel,
+        levelClass,
+        renderMode,
+        gpuInfo,
+        highlightPolicy
+      };
+    }
+
+    updateCodePerfInfo(perfEl, options = {}) {
+      if (!perfEl) return;
+
+      const codeSize = Number(options.codeSize || 0);
+      const lineCount = Number(options.lineCount || 0);
+      const highlighted = Boolean(options.highlighted);
+      const highlightCost = Number(options.highlightCost || 0);
+      const autoHighlightLimit = Number(options.autoHighlightLimit || 20 * 1024);
+      const loading = Boolean(options.loading);
+
+      const info = this.getDevicePerfInfo(
+        codeSize,
+        lineCount,
+        highlighted,
+        highlightCost,
+        autoHighlightLimit
+      );
+
+      perfEl.className = `extfind-code-perf ${info.levelClass}`;
+
+      perfEl.innerHTML = `
+        <div><strong>性能模式：</strong>${loading ? '加载中' : info.renderMode}</div>
+        <div><strong>代码大小：</strong>${codeSize ? this.formatBytes(codeSize) : '未知'}，<strong>行数：</strong>${lineCount || '计算中'}</div>
+        <div><strong>CPU：</strong>${info.cpuThreads} 线程，预计占用：${info.cpuLevel}</div>
+        <div><strong>内存：</strong>${info.memory}，设备：${info.isMobile ? '移动端' : '桌面端/平板'}</div>
+        <div><strong>GPU：</strong>${info.gpuInfo}</div>
+        <div><strong>高亮策略：</strong>${info.highlightPolicy}</div>
+        ${
+          highlighted
+            ? `<div><strong>高亮耗时：</strong>${highlightCost.toFixed(0)}ms</div>`
+            : ''
+        }
+      `;
     }
 
     renderLoader() {
@@ -1164,11 +1599,11 @@
     }
 
     pickLatest(versions) {
-      return versions.find(v => v.isLatest) || versions[0];
+      return versions.find(version => version.isLatest) || versions[0];
     }
 
     pickPrimaryFile(version) {
-      return version?.files?.find(f => f.isPrimary) || version?.files?.[0];
+      return version?.files?.find(file => file.isPrimary) || version?.files?.[0];
     }
 
     getLoaderVersions() {
@@ -1177,7 +1612,7 @@
 
     getSelectedLoaderVersion() {
       const versions = this.getLoaderVersions();
-      return versions.find(v => v.id === this.versionSelect.value) || this.pickLatest(versions);
+      return versions.find(version => version.id === this.versionSelect.value) || this.pickLatest(versions);
     }
 
     renderLoaderFiles() {
@@ -1224,6 +1659,7 @@
       }
 
       const versions = this.getLoaderVersions();
+
       this.versionSelect.innerHTML = '';
 
       for (const version of versions) {
@@ -1336,7 +1772,7 @@
       if (!version) throw new Error('没有可加载的版本。');
 
       const files = Array.isArray(version.files) ? version.files : [];
-      const file = files.find(f => f.id === this.fileSelect.value) || this.pickPrimaryFile(version);
+      const file = files.find(item => item.id === this.fileSelect.value) || this.pickPrimaryFile(version);
 
       if (!file) throw new Error(`版本 ${version.version} 没有文件。`);
 
@@ -1352,6 +1788,69 @@
       this.setLoaderStatus(
         `已加载 ${this.loaderData.name} ${version.version} / ${file.displayName || file.originalName || '文件'}`
       );
+    }
+
+    // ========== 新增积木实现 ==========
+    // 刷新商店列表（异步，不等待结果）
+    refreshStoreList() {
+      this.refreshStore().catch(e => console.warn('[ExtFind] 刷新失败:', e));
+    }
+
+    // 获取扩展名称列表（换行分隔）
+    getExtensionNamesList() {
+      return this.extensions.map(ext => ext.name || '').join('\n');
+    }
+
+    // 获取扩展作者列表（换行分隔）
+    getExtensionAuthorsList() {
+      return this.extensions.map(ext => ext.author?.displayName || '').join('\n');
+    }
+
+    // 获取扩展点赞数列表（换行分隔）
+    getExtensionLikesList() {
+      return this.extensions.map(ext => String(ext.likeCount || 0)).join('\n');
+    }
+
+    // 获取指定索引的扩展的版本数量
+    getExtensionVersionCount(args) {
+      const index = Math.max(0, Math.min(this.extensions.length - 1, Number(args.INDEX || 1) - 1));
+      const ext = this.extensions[index];
+      if (!ext) return 0;
+      return Array.isArray(ext.versions) ? ext.versions.length : 0;
+    }
+
+    // 获取指定索引的扩展的文件总数（所有版本文件数之和）
+    getExtensionTotalFilesCount(args) {
+      const index = Math.max(0, Math.min(this.extensions.length - 1, Number(args.INDEX || 1) - 1));
+      const ext = this.extensions[index];
+      if (!ext) return 0;
+      const versions = Array.isArray(ext.versions) ? ext.versions : [];
+      let total = 0;
+      for (const v of versions) {
+        if (Array.isArray(v.files)) total += v.files.length;
+      }
+      return total;
+    }
+
+    // 获取扩展的完整 JSON 字符串（整个 ext 对象）
+    getExtensionJSON(args) {
+      const index = Math.max(0, Math.min(this.extensions.length - 1, Number(args.INDEX || 1) - 1));
+      const ext = this.extensions[index];
+      if (!ext) return '{}';
+      try {
+        return JSON.stringify(ext);
+      } catch {
+        return '{}';
+      }
+    }
+
+    // 获取整个当前页扩展列表的 JSON 数组字符串
+    getAllExtensionsJSON() {
+      try {
+        return JSON.stringify(this.extensions);
+      } catch {
+        return '[]';
+      }
     }
 
     getInfo() {
@@ -1434,6 +1933,65 @@
             opcode: 'refreshStore',
             blockType: Scratch.BlockType.COMMAND,
             text: '刷新商店列表'
+          },
+          // ========== 新增积木：渲染扩展数据 ==========
+          {
+            opcode: 'refreshStoreList',
+            blockType: Scratch.BlockType.COMMAND,
+            text: '刷新扩展商店列表（异步）'
+          },
+          {
+            opcode: 'getExtensionNamesList',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '所有扩展名称列表（换行分隔）'
+          },
+          {
+            opcode: 'getExtensionAuthorsList',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '所有扩展作者列表（换行分隔）'
+          },
+          {
+            opcode: 'getExtensionLikesList',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '所有扩展点赞数列表（换行分隔）'
+          },
+          {
+            opcode: 'getExtensionVersionCount',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '当前页第 [INDEX] 个扩展的版本数量',
+            arguments: {
+              INDEX: {
+                type: Scratch.ArgumentType.NUMBER,
+                defaultValue: 1
+              }
+            }
+          },
+          {
+            opcode: 'getExtensionTotalFilesCount',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '当前页第 [INDEX] 个扩展的总文件数',
+            arguments: {
+              INDEX: {
+                type: Scratch.ArgumentType.NUMBER,
+                defaultValue: 1
+              }
+            }
+          },
+          {
+            opcode: 'getExtensionJSON',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '当前页第 [INDEX] 个扩展的 JSON 数据',
+            arguments: {
+              INDEX: {
+                type: Scratch.ArgumentType.NUMBER,
+                defaultValue: 1
+              }
+            }
+          },
+          {
+            opcode: 'getAllExtensionsJSON',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '当前页所有扩展的 JSON 数组'
           }
         ]
       };
@@ -1470,34 +2028,34 @@
     getExtensionName(args) {
       if (!this.extensions.length) return '';
 
-      const idx = Math.max(
+      const index = Math.max(
         0,
         Math.min(this.extensions.length - 1, Number(args.INDEX || 1) - 1)
       );
 
-      return this.extensions[idx]?.name || '';
+      return this.extensions[index]?.name || '';
     }
 
     getExtensionAuthor(args) {
       if (!this.extensions.length) return '';
 
-      const idx = Math.max(
+      const index = Math.max(
         0,
         Math.min(this.extensions.length - 1, Number(args.INDEX || 1) - 1)
       );
 
-      return this.extensions[idx]?.author?.displayName || '';
+      return this.extensions[index]?.author?.displayName || '';
     }
 
     getExtensionLikes(args) {
       if (!this.extensions.length) return 0;
 
-      const idx = Math.max(
+      const index = Math.max(
         0,
         Math.min(this.extensions.length - 1, Number(args.INDEX || 1) - 1)
       );
 
-      return this.extensions[idx]?.likeCount || 0;
+      return this.extensions[index]?.likeCount || 0;
     }
   }
 
