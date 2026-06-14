@@ -1,5 +1,5 @@
 // ExtFind 扩展
-//如果不觉得是AI的话，那就是真的
+//如果觉得是AI的话，那就是真的
 //鬼知道我调试多久
 (function (Scratch) {
   'use strict';
