@@ -1855,7 +1855,7 @@
 
     getInfo() {
       return {
-        id: 'extfindUnified',
+        id: 'find02extensions',
         name: 'ExtFind',
         color1: '#00baad',
         color2: '#00998f',
