@@ -1,3 +1,7 @@
+这以文件加是来自各个仓库的扩展
+等散碎扩展
+都没有授权，如果侵权提出Issues可删
+ 
  [PenguinMod扩展](https://github.com/PenguinMod/PenguinMod-ExtensionsGallery/tree/main/static/extensions)
 
  [Mistium扩展](https://github.com/Mistium/extensions.mistium/tree/main/files)
