@@ -1,12 +1,23 @@
  [PenguinMod扩展](https://github.com/PenguinMod/PenguinMod-ExtensionsGallery/tree/main/static/extensions)
+
  [Mistium扩展](https://github.com/Mistium/extensions.mistium/tree/main/files)
+ 
  [02engine扩展](https://github.com/DDguan2010/02engine-extensions/tree/master/extension)
+ 
  [AstraEditor扩展](https://github.com/AstraEditor/extensions/tree/master/extensions)
+ 
  [Nitro-Bolt扩展](https://github.com/Nitro-Bolt/extensions/)
+ 
  [ShredMod扩展](https://github.com/ShredMod/extensions-old)
+ 
  [ampmod扩展](https://codeberg.org/ampmod/extensions/src/branch/develop/extensions)
+ 
  [TutelMod扩展](https://github.com/TutelMod/TutelMod-ExtensionsGallery/tree/main/static/extensions)
+ 
  [Dinosaurmod扩展](https://github.com/Dinosaurmod/extensions/tree/main/src/extensions)
+ 
  [surv-is-a-dev扩展](https://github.com/surv-is-a-dev/gallery/tree/main/extensions/0znzw)
+ 
  [sans-2233 3D扩展](https://github.com/sans-2233/wb_s_simple3D)
+ 
  [iamVovaLU扩展](https://github.com/iamVovaLU/TurbowarpExtensionCollection)
