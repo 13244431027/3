@@ -1,4 +1,4 @@
-// newline-panel.js - TurboWarp Extension v2
+
 (function (Scratch) {
   'use strict';
 
@@ -6,7 +6,7 @@
     throw new Error('此扩展需要以 Unsandboxed 方式运行。');
   }
 
-  // ---------- 从扩展2引入的 HTML/Wrapper 类 ----------
+  
   class HTML {
     constructor(html) {
       this.html = html.trim();
