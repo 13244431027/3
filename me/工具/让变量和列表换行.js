@@ -1,11 +1,41 @@
 // newline-panel.js - TurboWarp Extension v2
-
 (function (Scratch) {
   'use strict';
 
   if (!Scratch.extensions.unsandboxed) {
     throw new Error('此扩展需要以 Unsandboxed 方式运行。');
   }
+
+  // ---------- 从扩展2引入的 HTML/Wrapper 类 ----------
+  class HTML {
+    constructor(html) {
+      this.html = html.trim();
+    }
+    toString() {
+      const div = document.createElement('div');
+      div.innerHTML = this.html;
+      return div.innerText;
+    }
+    getHTML() {
+      const div = document.createElement('div');
+      div.innerHTML = this.html;
+      return div;
+    }
+  }
+
+  class Wrapper extends String {
+    constructor(value) {
+      super(value);
+      this.value = value;
+    }
+    static unwrap(value) {
+      return value instanceof Wrapper ? value.value : value;
+    }
+    toString() {
+      return String(this.value);
+    }
+  }
+  // -------------------------------------------------
 
   class NewlinePanelExtension {
     constructor() {
@@ -36,7 +66,7 @@
 
       // Panel move/minimize
       this.isMinimized = false;
-      this.panelPos = { left: null, top: null }; // px
+      this.panelPos = { left: null, top: null };
       this.panelDrag = {
         active: false,
         startX: 0,
@@ -45,7 +75,77 @@
         startTop: 0
       };
       this.lastNonMinimized = { left: null, top: null, width: null, height: null };
+
+      // ---------- HTML 显示相关 ----------
+      this.htmlVarIds = new Set();               // 存储需要 HTML 显示的变量 id
+      this._origRequestUpdateMonitor = this.runtime.requestUpdateMonitor; // 保存原始方法
+      // 重写 requestUpdateMonitor，使变量监视器支持 HTML 渲染
+      this.runtime.requestUpdateMonitor = this._myRequestUpdateMonitor.bind(this);
+      // ------------------------------------
     }
+
+    // ---------- 自定义 requestUpdateMonitor ----------
+    _myRequestUpdateMonitor(state) {
+      const id = state.get('id');
+      let value = state.get('value');
+
+      // 1. 若该变量启用了 HTML 模式，则将纯文本包装为 HTML 对象
+      if (typeof id === 'string' && this.htmlVarIds.has(id)) {
+        const text = String(value ?? '');
+        value = new Wrapper(new HTML(text));
+        state.set('value', value);
+      }
+
+      // 2. 检测 value 是否为 HTML 可渲染对象（只要具有 getHTML 方法即可）
+      let htmlElement = null;
+      const unwrapped = Wrapper.unwrap(value);
+      if (unwrapped && typeof unwrapped.getHTML === 'function') {
+        htmlElement = unwrapped.getHTML();
+      }
+
+      if (htmlElement) {
+        // 渲染 HTML 到监视器
+        const monitor = this._getMonitorById(id);
+        if (monitor) {
+          this._patchMonitorValue(monitor, htmlElement);
+          return true; // 已处理
+        }
+      }
+
+      // 3. 否则调用原始方法（保留原有行为）
+      if (this._origRequestUpdateMonitor) {
+        return this._origRequestUpdateMonitor.call(this.runtime, state);
+      }
+      return false;
+    }
+
+    // 根据 id 获取监视器 DOM 节点（复制自扩展2）
+    _getMonitorById(id) {
+      const elements = document.querySelectorAll('[class*="monitor_monitor-container"]');
+      for (const el of Object.values(elements)) {
+        const internal = Object.values(el).find(
+          v => typeof v === 'object' && v !== null && Reflect.has(v, 'children')
+        );
+        if (internal) {
+          const props = internal?.children?.props;
+          if (id === props?.id) return el;
+        }
+      }
+      return null;
+    }
+
+    // 将监视器的值区域替换为 HTML 元素（复制自扩展2）
+    _patchMonitorValue(monitor, htmlElement) {
+      const valueElement = monitor.querySelector('[class*="value"]');
+      if (!valueElement) return;
+      // 清空并附加 HTML
+      valueElement.style.textAlign = 'left';
+      valueElement.style.backgroundColor = 'rgb(30, 30, 30)';
+      valueElement.style.color = '#eeeeee';
+      while (valueElement.firstChild) valueElement.removeChild(valueElement.firstChild);
+      valueElement.append(htmlElement);
+    }
+    // ------------------------------------------------
 
     getInfo() {
       return {
@@ -102,7 +202,7 @@
         -webkit-tap-highlight-color: transparent;
       `;
 
-      // 标题栏（可拖动）
+      // ---- 标题栏 ----
       const header = document.createElement('div');
       header.style.cssText = `
         padding: 10px 12px;
@@ -114,7 +214,7 @@
         gap: 8px;
         cursor: ${mobile ? 'default' : 'move'};
         user-select: none;
-        touch-action: none; /* 允许我们处理触控拖动面板 */
+        touch-action: none;
       `;
 
       const title = document.createElement('div');
@@ -156,7 +256,7 @@
       headerBtns.appendChild(closeBtn);
       header.appendChild(headerBtns);
 
-      // 内容区域
+      // ---- 内容区域 ----
       const content = document.createElement('div');
       content.style.cssText = `
         padding: 12px 14px;
@@ -173,7 +273,7 @@
         padding: 12px;
       `;
 
-      // 模式切换
+      // ---- 模式切换 ----
       const modeTabArea = document.createElement('div');
       modeTabArea.style.cssText = 'margin-bottom: 12px; display:flex; gap:8px; flex-wrap:wrap;';
 
@@ -207,7 +307,40 @@
       modeTabArea.appendChild(listTab);
       box.appendChild(modeTabArea);
 
-      // 选择区域
+      // ---- HTML 模式开关（新增） ----
+      const htmlToggleRow = document.createElement('div');
+      htmlToggleRow.style.cssText = 'margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;';
+
+      const htmlCheckbox = document.createElement('input');
+      htmlCheckbox.type = 'checkbox';
+      htmlCheckbox.id = 'html-mode-checkbox';
+      htmlCheckbox.checked = false;
+      htmlCheckbox.style.cssText = 'width: 18px; height: 18px;';
+
+      const htmlLabel = document.createElement('label');
+      htmlLabel.htmlFor = 'html-mode-checkbox';
+      htmlLabel.textContent = '写入为 html（危险）支持scratch与02engine,turbowarp暂不支持';
+      htmlLabel.style.cssText = 'font-size: 13px; font-weight: 700;';
+
+      const thanksLabel = document.createElement('div');
+      thanksLabel.textContent = '感谢不想上学提供部分代码';
+      thanksLabel.style.cssText = 'font-size: 13px; color: #ffd700; display: none; margin-left: 10px; font-weight: 700;';
+
+      htmlToggleRow.appendChild(htmlCheckbox);
+      htmlToggleRow.appendChild(htmlLabel);
+      htmlToggleRow.appendChild(thanksLabel);
+      box.appendChild(htmlToggleRow);
+
+      // 保存引用以便后续使用
+      this.htmlCheckbox = htmlCheckbox;
+      this.thanksLabel = thanksLabel;
+
+      // checkbox 变化时更新感谢标签显示
+      htmlCheckbox.addEventListener('change', () => {
+        thanksLabel.style.display = htmlCheckbox.checked ? 'inline' : 'none';
+      });
+
+      // ---- 选择区域 ----
       const selectArea = document.createElement('div');
       selectArea.style.cssText = 'margin-bottom: 10px;';
 
@@ -254,7 +387,7 @@
       itemInfo.style.cssText = 'font-size:11px; opacity:0.85; margin-bottom:10px; min-height:16px;';
       box.appendChild(itemInfo);
 
-      // 变量编辑
+      // ---- 变量编辑区 ----
       const varTextArea = document.createElement('textarea');
       varTextArea.placeholder = '请选择变量后编辑（支持换行）';
       varTextArea.style.cssText = `
@@ -275,7 +408,7 @@
       `;
       box.appendChild(varTextArea);
 
-      // 列表编辑
+      // ---- 列表编辑区 ----
       const listContainer = document.createElement('div');
       listContainer.style.cssText = `
         display: none;
@@ -303,7 +436,7 @@
       listContainer.appendChild(this.listItemsContainer);
       box.appendChild(listContainer);
 
-      // 按钮区
+      // ---- 操作按钮 ----
       const buttonArea = document.createElement('div');
       buttonArea.style.cssText = 'margin-top: 12px; display:grid; grid-template-columns: 1fr 1fr; gap: 8px;';
 
@@ -313,7 +446,7 @@
       buttonArea.appendChild(clearBtn);
       box.appendChild(buttonArea);
 
-      // 状态
+      // ---- 状态栏 ----
       const status = document.createElement('div');
       status.style.cssText = `
         margin-top: 10px;
@@ -331,16 +464,12 @@
       panel.appendChild(content);
       document.body.appendChild(panel);
 
-      // ---- 面板拖动（桌面+移动端）----
+      // ---- 面板拖动（复用原逻辑） ----
       const startPanelDrag = (clientX, clientY) => {
-        // 最小化时也允许拖动（移动端表现为拖动最小化条）
         const rect = panel.getBoundingClientRect();
-
-        // 使用 left/top 绝对值替代 translate 定位
         panel.style.transform = 'none';
         panel.style.left = `${rect.left}px`;
         panel.style.top = `${rect.top}px`;
-
         this.panelDrag.active = true;
         this.panelDrag.startX = clientX;
         this.panelDrag.startY = clientY;
@@ -350,17 +479,13 @@
 
       const movePanelDrag = (clientX, clientY) => {
         if (!this.panelDrag.active) return;
-
         const dx = clientX - this.panelDrag.startX;
         const dy = clientY - this.panelDrag.startY;
-
         const rect = panel.getBoundingClientRect();
         const w = rect.width;
         const h = rect.height;
-
         const newLeft = this.clamp(this.panelDrag.startLeft + dx, 8, window.innerWidth - w - 8);
         const newTop = this.clamp(this.panelDrag.startTop + dy, 8, window.innerHeight - h - 8);
-
         panel.style.left = `${newLeft}px`;
         panel.style.top = `${newTop}px`;
       };
@@ -369,7 +494,6 @@
         this.panelDrag.active = false;
       };
 
-      // 只允许从标题栏空白处拖动（避免按钮区域）
       header.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         if (e.target === minBtn || e.target === closeBtn) return;
@@ -389,7 +513,6 @@
         if (e.target === minBtn || e.target === closeBtn) return;
         const t = e.touches[0];
         startPanelDrag(t.clientX, t.clientY);
-
         const onMove = (ev) => {
           if (!ev.touches || ev.touches.length !== 1) return;
           const tt = ev.touches[0];
@@ -401,13 +524,12 @@
           window.removeEventListener('touchcancel', onEnd);
           endPanelDrag();
         };
-
         window.addEventListener('touchmove', onMove, { passive: false });
         window.addEventListener('touchend', onEnd, { passive: true });
         window.addEventListener('touchcancel', onEnd, { passive: true });
       }, { passive: true });
 
-      // ---- 最小化/还原（移动端：底部条；桌面：缩成小窗）----
+      // ---- 最小化 / 还原 ----
       const applyMinimizedStyle = () => {
         const rect = panel.getBoundingClientRect();
         this.lastNonMinimized = {
@@ -416,12 +538,9 @@
           width: rect.width,
           height: rect.height
         };
-
         this.isMinimized = true;
         content.style.display = 'none';
-
         if (mobile) {
-          // 底部抽屉式最小化：固定在底部，宽度撑满
           panel.style.transform = 'none';
           panel.style.left = '8px';
           panel.style.right = '8px';
@@ -431,27 +550,22 @@
           panel.style.maxHeight = 'unset';
           panel.style.borderRadius = '14px';
         } else {
-          // 桌面：缩成小窗，保留可拖动
           panel.style.maxHeight = 'unset';
           panel.style.width = '360px';
           panel.style.height = '56px';
         }
-        minBtn.textContent = '▢'; // 还原图标
+        minBtn.textContent = '▢';
       };
 
       const applyRestoredStyle = () => {
         this.isMinimized = false;
         content.style.display = 'block';
-
-        // 恢复位置（如果之前已经切换到 left/top 模式）
         panel.style.right = '';
         panel.style.bottom = '';
         panel.style.height = '';
         panel.style.maxHeight = 'calc(100vh - 16px)';
         panel.style.width = 'min(780px, calc(100vw - 16px))';
         panel.style.borderRadius = '12px';
-
-        // 如果曾经有记录位置，用 left/top 还原；否则回到居中 transform
         if (this.lastNonMinimized.left != null && this.lastNonMinimized.top != null) {
           panel.style.transform = 'none';
           panel.style.left = `${this.clamp(this.lastNonMinimized.left, 8, window.innerWidth - 120)}px`;
@@ -461,7 +575,6 @@
           panel.style.top = '50%';
           panel.style.transform = 'translate(-50%, -50%)';
         }
-
         minBtn.textContent = '—';
       };
 
@@ -470,18 +583,12 @@
         else applyMinimizedStyle();
       };
 
-      // 窗口尺寸变化时，保证面板不出界（移动端旋转）
+      // 窗口 resize 边界修正
       const onResize = () => {
         if (!this.panelElement) return;
-
-        if (this.isMinimized && mobile) {
-          // 底部条不需要处理
-          return;
-        }
-
+        if (this.isMinimized && mobile) return;
         const rect = panel.getBoundingClientRect();
-        if (panel.style.transform !== 'none') return; // 还在居中模式
-
+        if (panel.style.transform !== 'none') return;
         const w = rect.width;
         const h = rect.height;
         const left = this.clamp(rect.left, 8, window.innerWidth - w - 8);
@@ -491,13 +598,12 @@
       };
       window.addEventListener('resize', onResize);
 
-      // ---- 业务逻辑 ----
+      // ---- 业务逻辑绑定 ----
       const loadItems = () => this.loadItemsList(itemSelect, itemInfo, varTextArea);
 
       const switchMode = (mode) => {
         this.currentMode = mode;
         this.selectedItemId = null;
-
         if (mode === 'VARIABLE') {
           varTab.style.background = 'rgba(255,255,255,0.25)';
           listTab.style.background = 'rgba(255,255,255,0.15)';
@@ -549,10 +655,11 @@
         el.querySelector('textarea').focus();
       };
 
+      // 初次加载
       loadItems();
     }
 
-    // ---------- 数据加载 ----------
+    // ---------- 数据加载（原逻辑，微调） ----------
     loadItemsList(itemSelect, itemInfo, varTextArea) {
       const items = this.getItemsByMode(this.currentMode);
       itemSelect.innerHTML = '';
@@ -608,6 +715,13 @@
     }
 
     renderSelected(itemInfo, varTextArea) {
+      // 更新 checkbox 状态以匹配当前变量的 HTML 模式
+      if (this.htmlCheckbox && this.selectedItemId) {
+        const isHtml = this.htmlVarIds.has(this.selectedItemId);
+        this.htmlCheckbox.checked = isHtml;
+        this.thanksLabel.style.display = isHtml ? 'inline' : 'none';
+      }
+
       if (this.currentMode === 'VARIABLE') {
         this.loadSelectedVariable(itemInfo, varTextArea);
       } else {
@@ -644,7 +758,6 @@
       }
       const item = this.allItems.find(v => v.id === this.selectedItemId);
       if (!item) return;
-
       const targetType = item.isStage ? '舞台' : '角色';
       itemInfo.textContent = `${targetType}: ${item.targetName} | 长度: ${String(item.value).length}`;
       varTextArea.value = String(item.value);
@@ -658,17 +771,15 @@
       }
       const item = this.allItems.find(v => v.id === this.selectedItemId);
       if (!item) return;
-
       const targetType = item.isStage ? '舞台' : '角色';
       const arr = Array.isArray(item.value) ? item.value : [];
       itemInfo.textContent = `${targetType}: ${item.targetName} | 元素数: ${arr.length}`;
-
       this.listItemsContainer.innerHTML = '';
       arr.forEach(val => this.listItemsContainer.appendChild(this.createListItemElement(val)));
       this.updateListIndices();
     }
 
-    // ---------- 列表元素 + 排序 ----------
+    // ---------- 列表元素（排序等，原逻辑） ----------
     createListItemElement(value) {
       const wrapper = document.createElement('div');
       wrapper.className = 'list-item-wrapper';
@@ -756,7 +867,7 @@
         this.updateListIndices();
       };
 
-      // Desktop HTML5 drag (wrapper draggable; usually desktop only)
+      // Desktop drag
       wrapper.draggable = true;
       wrapper.ondragstart = (e) => {
         if (e.target === textarea) { e.preventDefault(); return; }
@@ -777,7 +888,7 @@
         else this.listItemsContainer.insertBefore(this.draggedElement, after);
       };
 
-      // Mobile: long-press handle drag
+      // Mobile touch drag (长按)
       handle.addEventListener('touchstart', (e) => this.onTouchHandleStart(e, wrapper), { passive: false });
       handle.addEventListener('touchmove', (e) => this.onTouchHandleMove(e), { passive: false });
       handle.addEventListener('touchend', () => this.onTouchHandleEnd(), { passive: true });
@@ -793,12 +904,10 @@
     onTouchHandleStart(e, wrapper) {
       if (!e.touches || e.touches.length !== 1) return;
       e.preventDefault();
-
       const t = e.touches[0];
       this.touchMoved = false;
       this.touchStartClientY = t.clientY;
       this.touchStartClientX = t.clientX;
-
       clearTimeout(this.touchLongPressTimer);
       this.touchLongPressTimer = setTimeout(() => {
         this.startTouchDrag(wrapper, t.clientY);
@@ -808,30 +917,23 @@
     onTouchHandleMove(e) {
       if (!e.touches || e.touches.length !== 1) return;
       const t = e.touches[0];
-
       const dy = Math.abs(t.clientY - this.touchStartClientY);
       const dx = Math.abs(t.clientX - this.touchStartClientX);
       if (dy > this.touchMoveThreshold || dx > this.touchMoveThreshold) this.touchMoved = true;
-
       if (!this.isTouchDragging && this.touchMoved) {
         clearTimeout(this.touchLongPressTimer);
         return;
       }
       if (!this.isTouchDragging) return;
-
       e.preventDefault();
-
       const y = t.clientY - this.touchDragPointerOffsetY;
       this.touchDragEl.style.top = `${y}px`;
-
-      // auto scroll list container (parent of listItemsContainer)
       const container = this.listItemsContainer.parentElement;
       const rect = container.getBoundingClientRect();
       const edge = 40;
       const speed = 12;
       if (t.clientY < rect.top + edge) container.scrollTop -= speed;
       if (t.clientY > rect.bottom - edge) container.scrollTop += speed;
-
       const after = this.getDragAfterElement(this.listItemsContainer, t.clientY);
       if (after == null) this.listItemsContainer.appendChild(this.touchDragPlaceholder);
       else this.listItemsContainer.insertBefore(this.touchDragPlaceholder, after);
@@ -840,13 +942,11 @@
     onTouchHandleEnd() {
       clearTimeout(this.touchLongPressTimer);
       if (!this.isTouchDragging) return;
-
       const ph = this.touchDragPlaceholder;
       if (ph && ph.parentNode) {
         ph.parentNode.insertBefore(this.touchDragEl, ph);
         ph.remove();
       }
-
       const el = this.touchDragEl;
       el.style.position = '';
       el.style.left = '';
@@ -855,21 +955,17 @@
       el.style.zIndex = '';
       el.style.boxShadow = '';
       el.style.opacity = '';
-
       this.isTouchDragging = false;
       this.touchDragEl = null;
       this.touchDragPlaceholder = null;
-
       this.updateListIndices();
     }
 
     startTouchDrag(wrapper, clientY) {
       this.isTouchDragging = true;
       this.touchDragEl = wrapper;
-
       const rect = wrapper.getBoundingClientRect();
       this.touchDragPointerOffsetY = clientY - rect.top;
-
       const ph = document.createElement('div');
       ph.style.cssText = `
         height: ${rect.height}px;
@@ -879,9 +975,7 @@
         background: rgba(255,255,255,0.08);
       `;
       this.touchDragPlaceholder = ph;
-
       wrapper.parentNode.insertBefore(ph, wrapper.nextSibling);
-
       wrapper.style.width = `${rect.width}px`;
       wrapper.style.position = 'fixed';
       wrapper.style.left = `${rect.left}px`;
@@ -894,7 +988,6 @@
     getDragAfterElement(container, y) {
       const items = [...container.querySelectorAll('.list-item-wrapper')]
         .filter(el => el !== this.draggedElement && el !== this.touchDragEl);
-
       let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
       for (const child of items) {
         const box = child.getBoundingClientRect();
@@ -912,25 +1005,19 @@
       });
     }
 
-    // ---------- 保存 ----------
+    // ---------- 保存（核心修改） ----------
     saveListFromItems() {
       if (!this.selectedItemId) return;
-
       const item = this.allItems.find(v => v.id === this.selectedItemId);
       if (!item) return;
-
       const target = this.runtime.targets.find(t => t.variables && t.variables[this.selectedItemId]);
       if (!target) return;
-
       const listObj = target.variables[this.selectedItemId];
       if (!listObj) return;
-
       const textareas = this.listItemsContainer.querySelectorAll('textarea');
       const values = Array.from(textareas).map(ta => ta.value);
-
       listObj.value = values;
       item.value = values;
-
       this.runtime.emit('PROJECT_CHANGED');
       this.runtime.requestRedraw();
     }
@@ -938,18 +1025,32 @@
     overwriteVariable(varId, newText) {
       const item = this.allItems.find(v => v.id === varId);
       if (!item) return;
-
       const target = this.runtime.targets.find(t => t.variables && t.variables[varId]);
       if (!target) return;
-
       const varObj = target.variables[varId];
       if (!varObj) return;
 
+      // 写入值
       varObj.value = newText;
       item.value = newText;
 
+      // 根据 checkbox 决定是否加入 HTML 集合
+      const htmlMode = this.htmlCheckbox && this.htmlCheckbox.checked;
+      if (htmlMode) {
+        this.htmlVarIds.add(varId);
+      } else {
+        this.htmlVarIds.delete(varId);
+      }
+
       this.runtime.emit('PROJECT_CHANGED');
       this.runtime.requestRedraw();
+
+      // 强制更新监视器（触发 requestUpdateMonitor）
+      // 通过调用 requestUpdateMonitor 传入状态，使我们的 _myRequestUpdateMonitor 生效
+      const state = new Map();
+      state.set('id', varId);
+      state.set('value', varObj.value);
+      this.runtime.requestUpdateMonitor(state);
     }
 
     // ---------- UI helpers ----------
@@ -983,24 +1084,19 @@
 
     closePanel() {
       clearTimeout(this.touchLongPressTimer);
-
       if (this.panelElement) {
         this.panelElement.remove();
         this.panelElement = null;
       }
       this.panelOpen = false;
-
       this.selectedItemId = null;
       this.allItems = [];
       this.currentMode = 'VARIABLE';
       this.listItemsContainer = null;
-
       this.draggedElement = null;
-
       this.isTouchDragging = false;
       this.touchDragEl = null;
       this.touchDragPlaceholder = null;
-
       this.isMinimized = false;
     }
   }
