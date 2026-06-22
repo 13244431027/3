@@ -30,7 +30,7 @@
             opcode: 'setApiKey',
             blockType: Scratch.BlockType.COMMAND,
             text: '设置 API Key [KEY]',
-            arguments: { KEY: { type: Scratch.ArgumentType.STRING, defaultValue: 'sk-xxxx' } }
+            arguments: { KEY: { type: Scratch.ArgumentType.STRING, defaultValue: '1cD7zI1nMuZYuvdj3muM25gNOWo0ljxCmGjShLzerbpn7d6s3dv3p78BA18bgMjIJ' } }
           },
           {
             opcode: 'setModel',
