@@ -1,12 +1,12 @@
 // GitHub Panel Pro+ 插件：Markdown 解析增强
-// 增强内容：marked + DOMPurify + highlight.js + 智能资源路径补全
+// 增强内容：marked + DOMPurify + highlight.js + 智能资源路径补全 + CDN 缓存
 // 适用于 GitHubPanelExtension 的 PluginManager
 
 plugin.id = "markdown-render-plus";
 plugin.name = "Markdown 解析增强";
-plugin.version = "1.1.0";
-plugin.description = "使用 marked + DOMPurify + highlight.js 增强 GitHub 面板 Markdown 预览，并支持相对资源路径智能补全。";
-plugin.tags = ["markdown", "marked", "highlight", "preview", "github", "assets"];
+plugin.version = "1.2.0";
+plugin.description = "使用 marked + DOMPurify + highlight.js 增强 GitHub 面板 Markdown 预览，并支持相对资源路径智能补全与 CDN 文件缓存。";
+plugin.tags = ["markdown", "marked", "highlight", "preview", "github", "assets", "cache"];
 
 plugin.style = `
 /* ===== Markdown Render Plus ===== */
@@ -142,7 +142,7 @@ plugin.style = `
 .gp-mdp-body kbd {
   display: inline-block;
   padding: 2px 6px;
-  font: 11px ui-monospace, SFMono-Regular, SFMono-Regular, Consolas, monospace;
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
   line-height: 1.4;
   color: #e6edf3;
   vertical-align: middle;
@@ -198,6 +198,13 @@ plugin.init = function (context) {
       "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
   };
 
+  const CACHE_CONFIG = {
+    version: "v1.2.0",
+    cacheName: "gp-markdown-render-plus-cdn-v1.2.0",
+    localPrefix: "gp-mdp-cdn-cache:",
+    ttl: 1000 * 60 * 60 * 24 * 14
+  };
+
   const state = {
     ready: false,
     loading: false,
@@ -205,40 +212,214 @@ plugin.init = function (context) {
     originalParseMarkdown: utils.parseMarkdown,
     currentFilePath: "",
     currentBaseDir: "",
-    patchedOpenFile: false
+    patchedOpenFile: false,
+    assetPromises: new Map()
   };
 
-  function loadCSS(href) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`link[href="${href}"]`)) {
-        resolve();
-        return;
-      }
-
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = href;
-      link.onload = resolve;
-      link.onerror = () => reject(new Error(`CSS 加载失败: ${href}`));
-      document.head.appendChild(link);
-    });
+  function now() {
+    return Date.now();
   }
 
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) {
-        resolve();
-        return;
+  function cacheKey(url) {
+    return `${CACHE_CONFIG.localPrefix}${CACHE_CONFIG.version}:${url}`;
+  }
+
+  async function readFromCacheStorage(url) {
+    if (!window.caches) return null;
+
+    try {
+      const cache = await caches.open(CACHE_CONFIG.cacheName);
+      const response = await cache.match(url);
+
+      if (!response) return null;
+
+      const savedAt = Number(response.headers.get("x-gp-mdp-cache-time") || "0");
+      const text = await response.text();
+
+      if (!text) return null;
+
+      return {
+        text,
+        savedAt,
+        expired: savedAt ? now() - savedAt > CACHE_CONFIG.ttl : false
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeToCacheStorage(url, text, contentType) {
+    if (!window.caches || !text) return false;
+
+    try {
+      const cache = await caches.open(CACHE_CONFIG.cacheName);
+
+      const response = new Response(text, {
+        status: 200,
+        headers: {
+          "content-type": contentType || "text/plain; charset=utf-8",
+          "x-gp-mdp-cache-time": String(now()),
+          "x-gp-mdp-cache-version": CACHE_CONFIG.version
+        }
+      });
+
+      await cache.put(url, response);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function readFromLocalStorage(url) {
+    try {
+      const raw = localStorage.getItem(cacheKey(url));
+      if (!raw) return null;
+
+      const data = JSON.parse(raw);
+
+      if (!data || !data.text) return null;
+
+      return {
+        text: data.text,
+        savedAt: data.savedAt || 0,
+        expired: data.savedAt ? now() - data.savedAt > CACHE_CONFIG.ttl : false
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function writeToLocalStorage(url, text) {
+    try {
+      localStorage.setItem(
+        cacheKey(url),
+        JSON.stringify({
+          version: CACHE_CONFIG.version,
+          savedAt: now(),
+          text
+        })
+      );
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function readCachedText(url) {
+    const cacheStorageData = await readFromCacheStorage(url);
+    if (cacheStorageData) return cacheStorageData;
+
+    return readFromLocalStorage(url);
+  }
+
+  async function writeCachedText(url, text, contentType) {
+    const ok = await writeToCacheStorage(url, text, contentType);
+    writeToLocalStorage(url, text);
+    return ok;
+  }
+
+  async function fetchTextWithCache(url, contentType) {
+    if (state.assetPromises.has(url)) {
+      return state.assetPromises.get(url);
+    }
+
+    const promise = (async () => {
+      const cached = await readCachedText(url);
+
+      if (cached && !cached.expired) {
+        console.log("[MarkdownRenderPlus] CDN cache hit:", url);
+        return cached.text;
       }
 
-      const script = document.createElement("script");
-      script.src = src;
-      script.async = true;
-      script.onload = resolve;
-      script.onerror = () => reject(new Error(`脚本加载失败: ${src}`));
-      document.head.appendChild(script);
-    });
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          cache: "no-cache"
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const text = await response.text();
+
+        if (!text) {
+          throw new Error("empty response");
+        }
+
+        await writeCachedText(url, text, contentType);
+
+        console.log("[MarkdownRenderPlus] CDN fetched and cached:", url);
+
+        return text;
+      } catch (error) {
+        if (cached && cached.text) {
+          console.warn("[MarkdownRenderPlus] CDN fetch failed, using stale cache:", url, error);
+          return cached.text;
+        }
+
+        throw error;
+      }
+    })();
+
+    state.assetPromises.set(url, promise);
+
+    try {
+      return await promise;
+    } finally {
+      state.assetPromises.delete(url);
+    }
   }
+
+  function injectStyleText(id, cssText) {
+    const old = document.querySelector(`style[data-gp-mdp-cdn="${id}"]`);
+    if (old) return;
+
+    const style = document.createElement("style");
+    style.setAttribute("data-gp-mdp-cdn", id);
+    style.textContent = cssText;
+    document.head.appendChild(style);
+  }
+
+  function injectScriptText(id, jsText, sourceUrl) {
+    if (document.querySelector(`script[data-gp-mdp-cdn="${id}"]`)) {
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.setAttribute("data-gp-mdp-cdn", id);
+    script.textContent = `${jsText}\n//# sourceURL=${sourceUrl}`;
+    document.head.appendChild(script);
+  }
+
+  async function loadCSSCached(id, href) {
+    const text = await fetchTextWithCache(href, "text/css; charset=utf-8");
+    injectStyleText(id, text);
+  }
+
+  async function loadScriptCached(id, src) {
+    const text = await fetchTextWithCache(src, "application/javascript; charset=utf-8");
+    injectScriptText(id, text, src);
+  }
+
+  plugin.clearCdnCache = async function () {
+    try {
+      if (window.caches) {
+        await caches.delete(CACHE_CONFIG.cacheName);
+      }
+    } catch {}
+
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith(CACHE_CONFIG.localPrefix)) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch {}
+
+    console.log("[MarkdownRenderPlus] CDN cache cleared.");
+  };
 
   async function initMarkdownLibs() {
     if (state.ready || state.loading) return;
@@ -246,13 +427,15 @@ plugin.init = function (context) {
     state.loading = true;
 
     try {
-      await loadCSS(CDN.githubMarkdownCSS);
-      await loadCSS(CDN.highlightCSS);
+      await Promise.all([
+        loadCSSCached("github-markdown-css", CDN.githubMarkdownCSS),
+        loadCSSCached("highlight-css", CDN.highlightCSS)
+      ]);
 
       await Promise.all([
-        loadScript(CDN.marked),
-        loadScript(CDN.dompurify),
-        loadScript(CDN.highlight)
+        loadScriptCached("marked", CDN.marked),
+        loadScriptCached("dompurify", CDN.dompurify),
+        loadScriptCached("highlight", CDN.highlight)
       ]);
 
       if (window.marked && typeof window.marked.setOptions === "function") {
@@ -265,7 +448,7 @@ plugin.init = function (context) {
       state.ready = true;
       state.failed = false;
 
-      console.log("[MarkdownRenderPlus] Markdown libraries loaded.");
+      console.log("[MarkdownRenderPlus] Markdown libraries loaded from CDN/cache.");
     } catch (error) {
       state.ready = false;
       state.failed = true;
@@ -370,70 +553,54 @@ plugin.init = function (context) {
     const lower = p.toLowerCase();
     const ownerRepo = `${safeOwner}/${safeRepo}`.toLowerCase();
 
-    // owner/repo/blob/branch/path
     if (ownerRepo && lower.startsWith(ownerRepo + "/blob/")) {
       const rest = p.slice(`${safeOwner}/${safeRepo}/blob/`.length);
       const parts = rest.split("/");
       parts.shift();
-      p = parts.join("/");
-      return p;
+      return parts.join("/");
     }
 
-    // owner/repo/raw/branch/path
     if (ownerRepo && lower.startsWith(ownerRepo + "/raw/")) {
       const rest = p.slice(`${safeOwner}/${safeRepo}/raw/`.length);
       const parts = rest.split("/");
       parts.shift();
-      p = parts.join("/");
-      return p;
+      return parts.join("/");
     }
 
-    // owner/repo/path
     if (ownerRepo && lower.startsWith(ownerRepo + "/")) {
-      p = p.slice(`${safeOwner}/${safeRepo}/`.length);
-      return p;
+      return p.slice(`${safeOwner}/${safeRepo}/`.length);
     }
 
-    // blob/branch/path
     if (lower.startsWith("blob/")) {
       const rest = p.slice("blob/".length);
       const parts = rest.split("/");
       parts.shift();
-      p = parts.join("/");
-      return p;
+      return parts.join("/");
     }
 
-    // raw/branch/path
     if (lower.startsWith("raw/")) {
       const rest = p.slice("raw/".length);
       const parts = rest.split("/");
       parts.shift();
-      p = parts.join("/");
-      return p;
+      return parts.join("/");
     }
 
-    // refs/heads/main/path
     if (lower.startsWith("refs/heads/")) {
       const rest = p.slice("refs/heads/".length);
       const parts = rest.split("/");
       parts.shift();
-      p = parts.join("/");
-      return p;
+      return parts.join("/");
     }
 
-    // refs/tags/v1/path
     if (lower.startsWith("refs/tags/")) {
       const rest = p.slice("refs/tags/".length);
       const parts = rest.split("/");
       parts.shift();
-      p = parts.join("/");
-      return p;
+      return parts.join("/");
     }
 
-    // branch/path
     if (safeBranch && lower.startsWith(safeBranch.toLowerCase() + "/")) {
-      p = p.slice(safeBranch.length + 1);
-      return p;
+      return p.slice(safeBranch.length + 1);
     }
 
     return p;
@@ -449,16 +616,13 @@ plugin.init = function (context) {
     const parts = splitUrlSuffix(value);
     let p = decodeURI(parts.path).trim();
 
-    // 去掉 Markdown/HTML 中偶发的包裹引号
     p = p.replace(/^['"]|['"]$/g, "");
 
-    // 绝对路径：/assets/x.png，基于仓库根目录
     if (p.startsWith("/")) {
       p = p.replace(/^\/+/, "");
     } else {
       p = stripKnownPrefix(p, owner, repo, branch);
 
-      // 如果不是 owner/repo/blob/branch 等格式，则按当前文件目录解析
       const lower = String(value).toLowerCase();
       const ownerRepo = `${owner}/${repo}`.toLowerCase();
 
@@ -554,7 +718,6 @@ plugin.init = function (context) {
     const template = document.createElement("template");
     template.innerHTML = String(rawHtml);
 
-    // HTML / Markdown 图片
     template.content.querySelectorAll("img[src]").forEach(el => {
       el.setAttribute(
         "src",
@@ -562,7 +725,6 @@ plugin.init = function (context) {
       );
     });
 
-    // HTML <source src=""> / <video src=""> / <audio src="">
     template.content.querySelectorAll("source[src], video[src], audio[src]").forEach(el => {
       el.setAttribute(
         "src",
@@ -570,7 +732,6 @@ plugin.init = function (context) {
       );
     });
 
-    // HTML <video poster="">
     template.content.querySelectorAll("video[poster]").forEach(el => {
       el.setAttribute(
         "poster",
@@ -578,7 +739,6 @@ plugin.init = function (context) {
       );
     });
 
-    // HTML <iframe src="">
     template.content.querySelectorAll("iframe[src]").forEach(el => {
       el.setAttribute(
         "src",
@@ -586,7 +746,6 @@ plugin.init = function (context) {
       );
     });
 
-    // srcset
     template.content.querySelectorAll("[srcset]").forEach(el => {
       el.setAttribute(
         "srcset",
@@ -594,7 +753,6 @@ plugin.init = function (context) {
       );
     });
 
-    // HTML / Markdown 链接
     template.content.querySelectorAll("a[href]").forEach(el => {
       el.setAttribute(
         "href",
@@ -724,14 +882,10 @@ plugin.init = function (context) {
     const safeBranch = branch || (core && core.currentBranch) || "main";
     const baseDir = getBaseDir();
 
-    // 首次使用时异步加载库
     if (!state.ready && !state.loading && !state.failed) {
-      initMarkdownLibs().then(() => {
-        // 库加载完成后不主动重绘，用户重新打开 / 切换预览即可看到增强效果
-      });
+      initMarkdownLibs();
     }
 
-    // 库未准备好时回退原解析器
     if (!state.ready || !window.marked || !window.DOMPurify) {
       const fallback = fallbackParse(text, safeOwner, safeRepo, safeBranch);
 
@@ -775,10 +929,9 @@ plugin.init = function (context) {
     }
   };
 
-  // 预加载
   initMarkdownLibs();
 
-  console.log("[MarkdownRenderPlus] Plugin initialized.");
+  console.log("[MarkdownRenderPlus] Plugin initialized with CDN cache.");
 };
 
 plugin.onHook = function (hookName, data) {
@@ -791,7 +944,6 @@ plugin.onHook = function (hookName, data) {
     } catch {}
   }
 
-  // 打开文件或切换模式后尝试补一次高亮和链接安全属性
   if (
     hookName === "file:open" ||
     hookName === "mode:switch" ||
