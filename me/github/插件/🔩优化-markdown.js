@@ -1,7 +1,7 @@
-// GitHub Panel Pro+ 插件：Markdown 解析增强
-// 增强内容：marked + DOMPurify + highlight.js + 智能资源路径补全 + CDN 缓存 + 手动缓存悬浮窗 + 强制覆盖原生解析
-// 修复：CDN 异步加载完成后自动补渲染已显示的 fallback 内容
-// 适用于 GitHubPanelExtension 的 PluginManager
+
+
+
+
 
 plugin.id = "markdown-render-plus";
 plugin.name = "Markdown 解析增强";
