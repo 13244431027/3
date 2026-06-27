@@ -25,3 +25,7 @@
  [sans-2233 3D扩展](https://github.com/sans-2233/wb_s_simple3D)
  
  [iamVovaLU扩展](https://github.com/iamVovaLU/TurbowarpExtensionCollection)
+
+  
+ [ningqi24扩展](https://github.com/ningqi24/Scratch-Turbowarp-more-Extension)
+
