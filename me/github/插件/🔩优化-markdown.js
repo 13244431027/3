@@ -1,8 +1,5 @@
 
 
-
-
-
 plugin.id = "markdown-render-plus";
 plugin.name = "Markdown 解析增强";
 plugin.version = "1.4.1";
