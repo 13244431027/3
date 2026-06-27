@@ -69,6 +69,37 @@
     return Blockly;
   }
 
+  // ===== 获取舞台区域尺寸（用于限制显示器最大大小） =====
+  function npGetStageSize(runtime) {
+    // 优先使用渲染器画布尺寸
+    try {
+      const canvas = runtime?.renderer?.canvas;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return { width: rect.width, height: rect.height };
+        }
+      }
+    } catch (e) {
+      // 忽略，继续尝试其他方式
+    }
+
+    // 退而求其次：从舞台容器元素读取
+    const stageEl =
+      document.querySelector('[class*="stage_stage-wrapper"]') ||
+      document.querySelector('[class*="stage_stage"]');
+
+    if (stageEl) {
+      const rect = stageEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return { width: rect.width, height: rect.height };
+      }
+    }
+
+    // 最终兜底：默认舞台尺寸
+    return { width: 480, height: 360 };
+  }
+
   function npShowHTMLReport(Blockly, id, value, textAlign) {
     const workspace = Blockly.getMainWorkspace();
     const block = workspace.getBlockById(id);
@@ -147,9 +178,26 @@
         if (unwrappedValue instanceof NP_HTML) {
           const inspector = unwrappedValue.getHTML();
 
+          // 取得舞台区域尺寸作为显示器的最大尺寸
+          const stage = npGetStageSize(runtime);
+          const maxW = Math.floor(stage.width);
+          const maxH = Math.floor(stage.height);
+
           valueElement.style.textAlign = 'left';
           valueElement.style.backgroundColor = 'rgb(30, 30, 30)';
           valueElement.style.color = '#eeeeee';
+
+          // 自动按内容缩放：宽高不固定，让内容决定大小
+          valueElement.style.width = 'auto';
+          valueElement.style.height = 'auto';
+
+          // 最大不超过舞台区域大小
+          valueElement.style.maxWidth = `${maxW}px`;
+          valueElement.style.maxHeight = `${maxH}px`;
+
+          // 超出舞台时自动出现滑动条
+          valueElement.style.overflow = 'auto';
+          valueElement.style.boxSizing = 'border-box';
 
           while (valueElement.firstChild) {
             valueElement.removeChild(valueElement.firstChild);
@@ -162,6 +210,14 @@
             internalInstance.memoizedProps?.style?.background ?? '';
           valueElement.style.color =
             internalInstance.memoizedProps?.style?.color ?? '';
+
+          // 还原显示器尺寸相关样式
+          valueElement.style.width = '';
+          valueElement.style.height = '';
+          valueElement.style.maxWidth = '';
+          valueElement.style.maxHeight = '';
+          valueElement.style.overflow = '';
+          valueElement.style.boxSizing = '';
 
           while (valueElement.firstChild) {
             valueElement.removeChild(valueElement.firstChild);
