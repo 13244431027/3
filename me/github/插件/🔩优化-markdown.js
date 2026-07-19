@@ -6,13 +6,8 @@ plugin.description =
   "内置 Markdown 解析";
 plugin.tags = [
   "markdown",
-  "preview",
   "highlight",
-  "html",
-  "github",
-  "assets",
-  "builtin",
-  "security"
+  "github"
 ];
 
 plugin.style = `
