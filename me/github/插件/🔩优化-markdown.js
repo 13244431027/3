@@ -1,13 +1,23 @@
 
-
 plugin.id = "markdown-render-plus";
 plugin.name = "Markdown 解析增强";
-plugin.version = "1.4.1";
-plugin.description = "使用 marked + DOMPurify + highlight.js 增强 GitHub 面板 Markdown 预览，支持相对路径智能补全、CDN 缓存、手动缓存悬浮窗，并强制覆盖原生解析器。";
-plugin.tags = ["markdown", "marked", "highlight", "preview", "github", "assets", "cache", "override"];
+plugin.version = "2.0.3";
+plugin.description =
+  "内置 Markdown 解析";
+plugin.tags = [
+  "markdown",
+  "preview",
+  "highlight",
+  "html",
+  "github",
+  "assets",
+  "builtin",
+  "security"
+];
 
 plugin.style = `
-/* ===== Markdown Render Plus ===== */
+/* ===== Markdown Render Plus / Built-in Secure ===== */
+
 .gp-mdp-body {
   color-scheme: dark !important;
   background: transparent !important;
@@ -16,47 +26,89 @@ plugin.style = `
   line-height: 1.65;
   word-break: break-word;
 }
-.gp-mdp-body h1, .gp-mdp-body h2, .gp-mdp-body h3,
-.gp-mdp-body h4, .gp-mdp-body h5, .gp-mdp-body h6 {
+
+.gp-mdp-body h1,
+.gp-mdp-body h2,
+.gp-mdp-body h3,
+.gp-mdp-body h4,
+.gp-mdp-body h5,
+.gp-mdp-body h6 {
   color: #e6edf3 !important;
   border-bottom-color: #30363d !important;
   margin-top: 1em;
   margin-bottom: 0.6em;
 }
-.gp-mdp-body h1 { font-size: 2em; border-bottom: 1px solid #30363d; padding-bottom: 0.3em; }
-.gp-mdp-body h2 { font-size: 1.5em; border-bottom: 1px solid #30363d; padding-bottom: 0.3em; }
+
+.gp-mdp-body h1,
+.gp-mdp-body h2 {
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 0.3em;
+}
+
+.gp-mdp-body h1 { font-size: 2em; }
+.gp-mdp-body h2 { font-size: 1.5em; }
 .gp-mdp-body h3 { font-size: 1.25em; }
-.gp-mdp-body a { color: #58a6ff !important; text-decoration: none; }
-.gp-mdp-body a:hover { text-decoration: underline; }
+
+.gp-mdp-body a {
+  color: #58a6ff !important;
+  text-decoration: none;
+}
+
+.gp-mdp-body a:hover {
+  text-decoration: underline;
+}
+
 .gp-mdp-body img {
+  display: block;
   max-width: 100%;
+  height: auto;
   border-radius: 6px;
   margin: 6px 0;
   background: rgba(255,255,255,0.04);
 }
-.gp-mdp-body video, .gp-mdp-body iframe {
+
+.gp-mdp-body video,
+.gp-mdp-body audio,
+.gp-mdp-body iframe {
   max-width: 100%;
   border-radius: 6px;
   margin: 8px 0;
   background: rgba(255,255,255,0.04);
   border: 1px solid #30363d;
 }
+
+.gp-mdp-body video {
+  width: 100%;
+}
+
+.gp-mdp-body iframe {
+  width: 100%;
+  min-height: 280px;
+}
+
 .gp-mdp-body table {
-  background-color: #0d1117 !important;
+  display: block;
+  width: 100%;
+  overflow-x: auto;
   border-collapse: collapse !important;
-  width: 100% !important;
+  background-color: #0d1117 !important;
   border: 1px solid #30363d !important;
   margin: 12px 0;
-  display: block;
-  overflow-x: auto;
 }
-.gp-mdp-body th, .gp-mdp-body td {
+
+.gp-mdp-body th,
+.gp-mdp-body td {
   background-color: #0d1117 !important;
   border: 1px solid #30363d !important;
   color: #e6edf3 !important;
   padding: 8px 12px !important;
 }
-.gp-mdp-body th { background-color: #161b22 !important; font-weight: 700; }
+
+.gp-mdp-body th {
+  background-color: #161b22 !important;
+  font-weight: 700;
+}
+
 .gp-mdp-body pre {
   background-color: #0d1117 !important;
   border: 1px solid #30363d !important;
@@ -65,19 +117,23 @@ plugin.style = `
   overflow-x: auto !important;
   margin: 12px 0;
 }
+
 .gp-mdp-body pre code {
+  display: block;
   background-color: transparent !important;
   color: #e6edf3 !important;
   font-size: 13px !important;
   white-space: pre !important;
   padding: 0 !important;
 }
+
 .gp-mdp-body code:not(pre code) {
   background-color: rgba(110,118,129,.4) !important;
   color: #f0883e !important;
   padding: .2em .4em !important;
   border-radius: 4px !important;
 }
+
 .gp-mdp-body blockquote {
   border-left: 4px solid #3fb950 !important;
   background-color: rgba(63,185,80,.08) !important;
@@ -85,8 +141,27 @@ plugin.style = `
   padding: 8px 12px;
   margin: 12px 0;
 }
-.gp-mdp-body hr { border: none; border-top: 1px solid #30363d; margin: 16px 0; }
-.gp-mdp-body ul, .gp-mdp-body ol { padding-left: 2em; }
+
+.gp-mdp-body hr {
+  border: none;
+  border-top: 1px solid #30363d;
+  margin: 16px 0;
+}
+
+.gp-mdp-body ul,
+.gp-mdp-body ol {
+  padding-left: 2em;
+}
+
+.gp-mdp-body li {
+  margin: 4px 0;
+}
+
+.gp-mdp-body li input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 .gp-mdp-body kbd {
   display: inline-block;
   padding: 2px 6px;
@@ -100,6 +175,7 @@ plugin.style = `
   border-radius: 6px;
   box-shadow: inset 0 -1px 0 #6e7681;
 }
+
 .gp-mdp-body details {
   border: 1px solid #30363d;
   border-radius: 8px;
@@ -107,644 +183,113 @@ plugin.style = `
   background: rgba(255,255,255,0.03);
   margin: 10px 0;
 }
-.gp-mdp-body summary { cursor: pointer; font-weight: 600; }
-.gp-mdp-body .hljs { background: transparent !important; color: #e6edf3 !important; }
 
-.gp-mdp-loading-note {
-  font-size: 12px;
-  opacity: 0.75;
-  padding: 6px 8px;
-  margin-bottom: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 6px;
-  background: rgba(255,255,255,0.05);
-}
-
-/* ===== 手动缓存悬浮窗 ===== */
-.gp-mdp-fab {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 2147483000;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid #30363d;
-  background: #161b22;
-  color: #e6edf3;
-  font-size: 18px;
+.gp-mdp-body summary {
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform .15s ease, background .15s ease;
-}
-.gp-mdp-fab:hover { background: #21262d; transform: scale(1.06); }
-.gp-mdp-panel {
-  position: fixed;
-  right: 18px;
-  bottom: 72px;
-  z-index: 2147483001;
-  width: 380px;
-  max-width: calc(100vw - 36px);
-  max-height: calc(100vh - 110px);
-  overflow: auto;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  color: #e6edf3;
-  font-size: 13px;
-  display: none;
-  flex-direction: column;
-}
-.gp-mdp-panel.gp-mdp-open { display: flex; }
-.gp-mdp-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid #30363d;
   font-weight: 600;
 }
-.gp-mdp-panel-close {
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  color: #8b949e;
-  font-size: 18px;
-  line-height: 1;
+
+.gp-mdp-body figure {
+  margin: 12px 0;
 }
-.gp-mdp-panel-close:hover { color: #e6edf3; }
-.gp-mdp-panel-body {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.gp-mdp-field { display: flex; flex-direction: column; gap: 4px; }
-.gp-mdp-field label { font-size: 12px; color: #8b949e; }
-.gp-mdp-field input {
-  width: 100%;
-  box-sizing: border-box;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  color: #e6edf3;
-  padding: 7px 9px;
+
+.gp-mdp-body figcaption {
+  opacity: 0.75;
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  margin-top: 4px;
 }
-.gp-mdp-field input:focus { outline: none; border-color: #58a6ff; }
-.gp-mdp-hint { font-size: 11px; color: #6e7681; line-height: 1.5; word-break: break-all; }
-.gp-mdp-hint code { color: #58a6ff; }
-.gp-mdp-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.gp-mdp-btn {
-  flex: 1;
-  min-width: 90px;
-  cursor: pointer;
-  border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 12px;
-  border: 1px solid #30363d;
-  background: #21262d;
+
+.gp-mdp-body mark {
+  background: rgba(210, 153, 34, .35);
   color: #e6edf3;
+  border-radius: 3px;
+  padding: 0 3px;
 }
-.gp-mdp-btn:hover { background: #30363d; }
-.gp-mdp-btn.gp-mdp-primary { background: #238636; border-color: #2ea043; }
-.gp-mdp-btn.gp-mdp-primary:hover { background: #2ea043; }
-.gp-mdp-btn.gp-mdp-danger { background: #b62324; border-color: #da3633; }
-.gp-mdp-btn.gp-mdp-danger:hover { background: #da3633; }
-.gp-mdp-status { font-size: 12px; min-height: 16px; color: #8b949e; }
-.gp-mdp-status.gp-mdp-ok { color: #3fb950; }
-.gp-mdp-status.gp-mdp-err { color: #f85149; }
-.gp-mdp-cache-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border-top: 1px solid #30363d;
-  padding-top: 10px;
-}
-.gp-mdp-cache-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-.gp-mdp-cache-item .gp-mdp-cache-name { font-size: 11px; word-break: break-all; flex: 1; }
-.gp-mdp-cache-item .gp-mdp-cache-meta { font-size: 10px; color: #6e7681; }
+
+.gp-mdp-body .gp-code-keyword { color: #ff7b72 !important; }
+.gp-mdp-body .gp-code-string { color: #a5d6ff !important; }
+.gp-mdp-body .gp-code-number { color: #79c0ff !important; }
+.gp-mdp-body .gp-code-comment { color: #8b949e !important; font-style: italic; }
+.gp-mdp-body .gp-code-function { color: #d2a8ff !important; }
+.gp-mdp-body .gp-code-property { color: #7ee787 !important; }
+.gp-mdp-body .gp-code-tag { color: #7ee787 !important; }
+.gp-mdp-body .gp-code-attr { color: #79c0ff !important; }
+.gp-mdp-body .gp-code-selector { color: #d2a8ff !important; }
+.gp-mdp-body .gp-code-punctuation { color: #c9d1d9 !important; }
+.gp-mdp-body .gp-code-meta { color: #ffa657 !important; }
 `;
+
+plugin.settings = {
+  enableRawHtml: true,
+  enableExternalImages: true,
+  enableExternalMedia: false,
+  enableIframes: false,
+  enableDataImages: false,
+  enableCodeHighlight: true,
+  openLinksInNewTab: true,
+  allowedIframeHosts: [
+    "www.youtube.com",
+    "www.youtube-nocookie.com",
+    "player.vimeo.com",
+    "codesandbox.io",
+    "stackblitz.com"
+  ]
+};
 
 plugin.init = function (context) {
   const { core, utils, extension } = context;
-
-  // 强制覆盖原生解析器：即使库加载失败，也绝不回退到原始解析
-  const FORCE_OVERRIDE = true;
-
-  const CDN = {
-    githubMarkdownCSS: "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css",
-    highlightCSS: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css",
-    marked: "https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js",
-    dompurify: "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js",
-    highlight: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
-  };
-
-  const CACHE_CONFIG = {
-    version: "v1.4.1",
-    cacheName: "gp-markdown-render-plus-cdn-v1.4.1",
-    localPrefix: "gp-mdp-cdn-cache:",
-    ttl: 1000 * 60 * 60 * 24 * 14
-  };
+  const pluginInstance = this;
 
   const state = {
-    ready: false,
-    loading: false,
-    failed: false,
-    originalParseMarkdown: utils.parseMarkdown,
+    context,
+    core,
+    utils,
+    extension,
+
+    originalParseMarkdown:
+      typeof utils.parseMarkdown === "function"
+        ? utils.parseMarkdown
+        : null,
+
+    originalOpenFile:
+      extension && typeof extension.openFile === "function"
+        ? extension.openFile
+        : null,
+
+    enhancedParseMarkdown: null,
+    patchedOpenFile: null,
+
     currentFilePath: "",
     currentBaseDir: "",
-    patchedOpenFile: false,
-    assetPromises: new Map()
+
+    disposed: false
   };
 
-  // ===== 待渲染队列（修复异步加载时机问题）=====
-  const pendingRenders = new Map();
-  let renderCounter = 0;
+  pluginInstance._mdpState = state;
 
-  function now() { return Date.now(); }
-
-  function cacheKey(url) {
-    return `${CACHE_CONFIG.localPrefix}${CACHE_CONFIG.version}:${url}`;
-  }
-
-  async function readFromCacheStorage(url) {
-    if (!window.caches) return null;
-    try {
-      const cache = await caches.open(CACHE_CONFIG.cacheName);
-      const response = await cache.match(url);
-      if (!response) return null;
-      const savedAt = Number(response.headers.get("x-gp-mdp-cache-time") || "0");
-      const text = await response.text();
-      if (!text) return null;
-      return { text, savedAt, expired: savedAt ? now() - savedAt > CACHE_CONFIG.ttl : false };
-    } catch {
-      return null;
-    }
-  }
-
-  async function writeToCacheStorage(url, text, contentType) {
-    if (!window.caches || !text) return false;
-    try {
-      const cache = await caches.open(CACHE_CONFIG.cacheName);
-      const response = new Response(text, {
-        status: 200,
-        headers: {
-          "content-type": contentType || "text/plain; charset=utf-8",
-          "x-gp-mdp-cache-time": String(now()),
-          "x-gp-mdp-cache-version": CACHE_CONFIG.version
-        }
-      });
-      await cache.put(url, response);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function readFromLocalStorage(url) {
-    try {
-      const raw = localStorage.getItem(cacheKey(url));
-      if (!raw) return null;
-      const data = JSON.parse(raw);
-      if (!data || !data.text) return null;
-      return {
-        text: data.text,
-        savedAt: data.savedAt || 0,
-        expired: data.savedAt ? now() - data.savedAt > CACHE_CONFIG.ttl : false
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  function writeToLocalStorage(url, text) {
-    try {
-      localStorage.setItem(
-        cacheKey(url),
-        JSON.stringify({ version: CACHE_CONFIG.version, savedAt: now(), text })
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async function readCachedText(url) {
-    const cacheStorageData = await readFromCacheStorage(url);
-    if (cacheStorageData) return cacheStorageData;
-    return readFromLocalStorage(url);
-  }
-
-  async function writeCachedText(url, text, contentType) {
-    const ok = await writeToCacheStorage(url, text, contentType);
-    writeToLocalStorage(url, text);
-    return ok;
-  }
-
-  async function fetchTextWithCache(url, contentType) {
-    if (state.assetPromises.has(url)) {
-      return state.assetPromises.get(url);
-    }
-    const promise = (async () => {
-      const cached = await readCachedText(url);
-      if (cached && !cached.expired) {
-        console.log("[MarkdownRenderPlus] CDN cache hit:", url);
-        return cached.text;
-      }
-      try {
-        const response = await fetch(url, { method: "GET", cache: "no-cache" });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const text = await response.text();
-        if (!text) {
-          throw new Error("empty response");
-        }
-        await writeCachedText(url, text, contentType);
-        console.log("[MarkdownRenderPlus] CDN fetched and cached:", url);
-        return text;
-      } catch (error) {
-        if (cached && cached.text) {
-          console.warn("[MarkdownRenderPlus] CDN fetch failed, using stale cache:", url, error);
-          return cached.text;
-        }
-        throw error;
-      }
-    })();
-    state.assetPromises.set(url, promise);
-    try {
-      return await promise;
-    } finally {
-      state.assetPromises.delete(url);
-    }
-  }
-
-  function injectStyleText(id, cssText) {
-    const old = document.querySelector(`style[data-gp-mdp-cdn="${id}"]`);
-    if (old) return;
-    const style = document.createElement("style");
-    style.setAttribute("data-gp-mdp-cdn", id);
-    style.textContent = cssText;
-    document.head.appendChild(style);
-  }
-
-  function injectScriptText(id, jsText, sourceUrl) {
-    if (document.querySelector(`script[data-gp-mdp-cdn="${id}"]`)) {
-      return;
-    }
-    const script = document.createElement("script");
-    script.setAttribute("data-gp-mdp-cdn", id);
-    script.textContent = `${jsText}\n//# sourceURL=${sourceUrl}`;
-    document.head.appendChild(script);
-  }
-
-  async function loadCSSCached(id, href) {
-    const text = await fetchTextWithCache(href, "text/css; charset=utf-8");
-    injectStyleText(id, text);
-  }
-
-  async function loadScriptCached(id, src) {
-    const text = await fetchTextWithCache(src, "application/javascript; charset=utf-8");
-    injectScriptText(id, text, src);
-  }
-
-  plugin.clearCdnCache = async function () {
-    try {
-      if (window.caches) {
-        await caches.delete(CACHE_CONFIG.cacheName);
-      }
-    } catch {}
-    try {
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith(CACHE_CONFIG.localPrefix)) {
-          localStorage.removeItem(key);
-        }
-      });
-    } catch {}
-    console.log("[MarkdownRenderPlus] CDN cache cleared.");
-  };
-
-  // 手动缓存：根据 URL 推断资源类型并缓存（不一定立即注入）
-  async function manualCacheUrl(url) {
-    const clean = String(url || "").trim();
-    if (!clean || !/^https?:\/\//i.test(clean)) {
-      throw new Error("请输入合法的 http(s) 文件地址");
-    }
-    const isCss = /\.css(\?|#|$)/i.test(clean);
-    const contentType = isCss
-      ? "text/css; charset=utf-8"
-      : "application/javascript; charset=utf-8";
-    const response = await fetch(clean, { method: "GET", cache: "no-cache" });
-    if (!response.ok) {
-      throw new Error(`下载失败 HTTP ${response.status}`);
-    }
-    const text = await response.text();
-    if (!text) {
-      throw new Error("文件内容为空");
-    }
-    await writeCachedText(clean, text, contentType);
-    return { url: clean, size: text.length, isCss };
-  }
-
-  function listLocalCache() {
-    const items = [];
-    try {
-      const prefix = `${CACHE_CONFIG.localPrefix}${CACHE_CONFIG.version}:`;
-      Object.keys(localStorage).forEach(key => {
-        if (!key.startsWith(prefix)) return;
-        const url = key.slice(prefix.length);
-        let savedAt = 0;
-        let size = 0;
-        try {
-          const data = JSON.parse(localStorage.getItem(key));
-          savedAt = data.savedAt || 0;
-          size = data.text ? data.text.length : 0;
-        } catch {}
-        items.push({ url, savedAt, size });
-      });
-    } catch {}
-    return items.sort((a, b) => b.savedAt - a.savedAt);
-  }
-
-  async function removeCachedUrl(url) {
-    try {
-      localStorage.removeItem(cacheKey(url));
-    } catch {}
-    try {
-      if (window.caches) {
-        const cache = await caches.open(CACHE_CONFIG.cacheName);
-        await cache.delete(url);
-      }
-    } catch {}
-  }
-
-  function formatTime(ts) {
-    if (!ts) return "未知时间";
-    try {
-      return new Date(ts).toLocaleString();
-    } catch {
-      return "未知时间";
-    }
-  }
-
-  function formatSize(bytes) {
-    if (!bytes) return "0 B";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  }
-
-  // ===== 悬浮窗 UI =====
-  let panelEls = null;
-
-  function setStatus(text, type) {
-    if (!panelEls) return;
-    panelEls.status.textContent = text || "";
-    panelEls.status.classList.remove("gp-mdp-ok", "gp-mdp-err");
-    if (type === "ok") panelEls.status.classList.add("gp-mdp-ok");
-    if (type === "err") panelEls.status.classList.add("gp-mdp-err");
-  }
-
-  function renderCacheList() {
-    if (!panelEls) return;
-    const items = listLocalCache();
-    const list = panelEls.cacheList;
-    list.innerHTML = "";
-    if (!items.length) {
-      const empty = document.createElement("div");
-      empty.className = "gp-mdp-hint";
-      empty.textContent = "暂无已缓存文件。";
-      list.appendChild(empty);
-      return;
-    }
-    items.forEach(item => {
-      const row = document.createElement("div");
-      row.className = "gp-mdp-cache-item";
-      const left = document.createElement("div");
-      left.style.flex = "1";
-      const name = document.createElement("div");
-      name.className = "gp-mdp-cache-name";
-      name.textContent = item.url;
-      name.title = item.url;
-      const meta = document.createElement("div");
-      meta.className = "gp-mdp-cache-meta";
-      meta.textContent = `${formatSize(item.size)} · ${formatTime(item.savedAt)}`;
-      left.appendChild(name);
-      left.appendChild(meta);
-      const del = document.createElement("button");
-      del.className = "gp-mdp-btn gp-mdp-danger";
-      del.style.flex = "0 0 auto";
-      del.style.minWidth = "auto";
-      del.textContent = "删除";
-      del.addEventListener("click", async () => {
-        await removeCachedUrl(item.url);
-        renderCacheList();
-        setStatus("已删除该缓存。", "ok");
-      });
-      row.appendChild(left);
-      row.appendChild(del);
-      list.appendChild(row);
-    });
-  }
-
-  function buildPanel() {
-    if (document.querySelector(".gp-mdp-fab")) return;
-    const fab = document.createElement("button");
-    fab.className = "gp-mdp-fab";
-    fab.type = "button";
-    fab.title = "Markdown 缓存管理";
-    fab.textContent = "⬇";
-
-    const panel = document.createElement("div");
-    panel.className = "gp-mdp-panel";
-    panel.innerHTML = `
-      <div class="gp-mdp-panel-header">
-        <span>Markdown 资源缓存</span>
-        <button class="gp-mdp-panel-close" type="button" title="关闭">×</button>
-      </div>
-      <div class="gp-mdp-panel-body">
-        <div class="gp-mdp-field">
-          <label for="gp-mdp-url-input">文件地址（CSS / JS）</label>
-          <input id="gp-mdp-url-input" type="text" placeholder="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css" />
-          <div class="gp-mdp-hint">
-            请从如下地址获取并填写文件，例如：<br>
-            <code>https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css</code>
-          </div>
-        </div>
-        <div class="gp-mdp-btn-row">
-          <button class="gp-mdp-btn gp-mdp-primary" data-action="cache" type="button">下载并缓存</button>
-          <button class="gp-mdp-btn" data-action="reload" type="button">重新加载库</button>
-        </div>
-        <div class="gp-mdp-btn-row">
-          <button class="gp-mdp-btn gp-mdp-danger" data-action="clear" type="button">清空全部缓存</button>
-        </div>
-        <div class="gp-mdp-status"></div>
-        <div class="gp-mdp-cache-list"></div>
-      </div>
-    `;
-
-    document.body.appendChild(fab);
-    document.body.appendChild(panel);
-
-    panelEls = {
-      fab,
-      panel,
-      input: panel.querySelector("#gp-mdp-url-input"),
-      status: panel.querySelector(".gp-mdp-status"),
-      cacheList: panel.querySelector(".gp-mdp-cache-list")
+  function getSettings() {
+    return {
+      ...plugin.settings,
+      ...(pluginInstance.settings || {})
     };
-
-    function togglePanel(open) {
-      const willOpen = open === undefined ? !panel.classList.contains("gp-mdp-open") : open;
-      panel.classList.toggle("gp-mdp-open", willOpen);
-      if (willOpen) {
-        renderCacheList();
-        setStatus("", "");
-      }
-    }
-
-    fab.addEventListener("click", () => togglePanel());
-    panel.querySelector(".gp-mdp-panel-close").addEventListener("click", () => togglePanel(false));
-    panelEls.input.addEventListener("keydown", e => {
-      if (e.key === "Enter") {
-        panel.querySelector('[data-action="cache"]').click();
-      }
-    });
-
-    panel.querySelector('[data-action="cache"]').addEventListener("click", async () => {
-      const url = panelEls.input.value;
-      setStatus("正在下载并缓存…", "");
-      try {
-        const result = await manualCacheUrl(url);
-        setStatus(`已缓存 ${result.isCss ? "CSS" : "JS"} 文件（${formatSize(result.size)}）。`, "ok");
-        panelEls.input.value = "";
-        renderCacheList();
-      } catch (error) {
-        setStatus(`缓存失败：${error.message || error}`, "err");
-      }
-    });
-
-    panel.querySelector('[data-action="reload"]').addEventListener("click", async () => {
-      setStatus("正在重新加载 Markdown 库…", "");
-      state.ready = false;
-      state.failed = false;
-      try {
-        await initMarkdownLibs();
-        setStatus(
-          state.ready ? "Markdown 库已重新加载。" : "重新加载失败，请检查缓存或网络。",
-          state.ready ? "ok" : "err"
-        );
-        renderCacheList();
-      } catch (error) {
-        setStatus(`重新加载失败：${error.message || error}`, "err");
-      }
-    });
-
-    panel.querySelector('[data-action="clear"]').addEventListener("click", async () => {
-      await plugin.clearCdnCache();
-      renderCacheList();
-      setStatus("已清空全部缓存。", "ok");
-    });
-  }
-
-  function ensurePanel() {
-    if (document.body) {
-      buildPanel();
-    } else {
-      document.addEventListener("DOMContentLoaded", buildPanel, { once: true });
-    }
-  }
-
-  // ===== Markdown 库加载与解析增强 =====
-  async function initMarkdownLibs() {
-    if (state.ready || state.loading) return;
-    state.loading = true;
-    try {
-      await Promise.all([
-        loadCSSCached("github-markdown-css", CDN.githubMarkdownCSS),
-        loadCSSCached("highlight-css", CDN.highlightCSS)
-      ]);
-      await Promise.all([
-        loadScriptCached("marked", CDN.marked),
-        loadScriptCached("dompurify", CDN.dompurify),
-        loadScriptCached("highlight", CDN.highlight)
-      ]);
-      if (window.marked && typeof window.marked.setOptions === "function") {
-        window.marked.setOptions({ gfm: true, breaks: true });
-      }
-      state.ready = true;
-      state.failed = false;
-      console.log("[MarkdownRenderPlus] Markdown libraries loaded from CDN/cache.");
-      // 库就绪后补渲染已显示的 fallback 内容
-      reRenderPending();
-    } catch (error) {
-      state.ready = false;
-      state.failed = true;
-      console.warn("[MarkdownRenderPlus] Markdown libraries load failed:", error);
-    } finally {
-      state.loading = false;
-    }
   }
 
   function escapeHtml(value) {
-    if (value === null || value === undefined) return "";
-    return String(value).replace(/[&<>"']/g, char => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    }[char]));
+    return String(value == null ? "" : value).replace(/[&<>"']/g, char => {
+      const map = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      };
+
+      return map[char];
+    });
   }
 
-  function dirname(path) {
-    const clean = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
-    const i = clean.lastIndexOf("/");
-    return i >= 0 ? clean.slice(0, i) : "";
-  }
-
-  function splitUrlSuffix(url) {
-    const raw = String(url || "").trim();
-    const hashIndex = raw.indexOf("#");
-    const queryIndex = raw.indexOf("?");
-    let cut = -1;
-    if (queryIndex >= 0 && hashIndex >= 0) {
-      cut = Math.min(queryIndex, hashIndex);
-    } else if (queryIndex >= 0) {
-      cut = queryIndex;
-    } else if (hashIndex >= 0) {
-      cut = hashIndex;
-    }
-    if (cut < 0) {
-      return { path: raw, suffix: "" };
-    }
-    return { path: raw.slice(0, cut), suffix: raw.slice(cut) };
-  }
-
-  function isExternalUrl(url) {
-    const clean = String(url || "").trim();
-    return /^(https?:)?\/\//i.test(clean) ||
-      /^data:/i.test(clean) ||
-      /^blob:/i.test(clean) ||
-      /^mailto:/i.test(clean) ||
-      /^tel:/i.test(clean) ||
-      /^javascript:/i.test(clean) ||
-      /^#/i.test(clean);
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/`/g, "&#96;");
   }
 
   function normalizeSlashes(path) {
@@ -753,372 +298,1786 @@ plugin.init = function (context) {
       .replace(/\/+/g, "/");
   }
 
+  function dirname(path) {
+    const clean = normalizeSlashes(path)
+      .replace(/^\/+/, "")
+      .replace(/\/+$/, "");
+
+    const index = clean.lastIndexOf("/");
+    return index >= 0 ? clean.slice(0, index) : "";
+  }
+
   function normalizeDotSegments(path) {
-    const absolute = String(path || "").startsWith("/");
-    const parts = normalizeSlashes(path).split("/");
-    const out = [];
+    const raw = normalizeSlashes(path);
+    const absolute = raw.startsWith("/");
+    const parts = raw.split("/");
+    const output = [];
+
     for (const part of parts) {
       if (!part || part === ".") continue;
+
       if (part === "..") {
-        if (out.length > 0) {
-          out.pop();
-        }
+        if (output.length > 0) output.pop();
         continue;
       }
-      out.push(part);
+
+      output.push(part);
     }
-    return (absolute ? "/" : "") + out.join("/");
+
+    return `${absolute ? "/" : ""}${output.join("/")}`;
   }
 
-  function stripKnownPrefix(path, owner, repo, branch) {
-    let p = normalizeSlashes(path).replace(/^\/+/, "");
-    const safeOwner = String(owner || "");
-    const safeRepo = String(repo || "");
-    const safeBranch = String(branch || "main");
-    const lower = p.toLowerCase();
-    const ownerRepo = `${safeOwner}/${safeRepo}`.toLowerCase();
+  function splitUrlSuffix(url) {
+    const raw = String(url || "").trim();
+    const queryIndex = raw.indexOf("?");
+    const hashIndex = raw.indexOf("#");
 
-    if (ownerRepo && lower.startsWith(ownerRepo + "/blob/")) {
-      const rest = p.slice(`${safeOwner}/${safeRepo}/blob/`.length);
-      const parts = rest.split("/");
-      parts.shift();
-      return parts.join("/");
+    let cutIndex = -1;
+
+    if (queryIndex >= 0 && hashIndex >= 0) {
+      cutIndex = Math.min(queryIndex, hashIndex);
+    } else if (queryIndex >= 0) {
+      cutIndex = queryIndex;
+    } else if (hashIndex >= 0) {
+      cutIndex = hashIndex;
     }
-    if (ownerRepo && lower.startsWith(ownerRepo + "/raw/")) {
-      const rest = p.slice(`${safeOwner}/${safeRepo}/raw/`.length);
-      const parts = rest.split("/");
-      parts.shift();
-      return parts.join("/");
+
+    if (cutIndex < 0) {
+      return {
+        path: raw,
+        suffix: ""
+      };
     }
-    if (ownerRepo && lower.startsWith(ownerRepo + "/")) {
-      return p.slice(`${safeOwner}/${safeRepo}/`.length);
-    }
-    if (lower.startsWith("blob/")) {
-      const rest = p.slice("blob/".length);
-      const parts = rest.split("/");
-      parts.shift();
-      return parts.join("/");
-    }
-    if (lower.startsWith("raw/")) {
-      const rest = p.slice("raw/".length);
-      const parts = rest.split("/");
-      parts.shift();
-      return parts.join("/");
-    }
-    if (lower.startsWith("refs/heads/")) {
-      const rest = p.slice("refs/heads/".length);
-      const parts = rest.split("/");
-      parts.shift();
-      return parts.join("/");
-    }
-    if (lower.startsWith("refs/tags/")) {
-      const rest = p.slice("refs/tags/".length);
-      const parts = rest.split("/");
-      parts.shift();
-      return parts.join("/");
-    }
-    if (safeBranch && lower.startsWith(safeBranch.toLowerCase() + "/")) {
-      return p.slice(safeBranch.length + 1);
-    }
-    return p;
+
+    return {
+      path: raw.slice(0, cutIndex),
+      suffix: raw.slice(cutIndex)
+    };
   }
 
-  function resolveRepoPath(input, owner, repo, branch, baseDir) {
-    const value = String(input || "").trim();
-    if (!value || isExternalUrl(value)) {
-      return value;
-    }
-    const parts = splitUrlSuffix(value);
-    let p = decodeURI(parts.path).trim();
-    p = p.replace(/^['"]|['"]$/g, "");
+  function getUrlScheme(url) {
+    const match = String(url || "")
+      .trim()
+      .match(/^([a-z][a-z0-9+.-]*):/i);
 
-    if (p.startsWith("/")) {
-      p = p.replace(/^\/+/, "");
-    } else {
-      p = stripKnownPrefix(p, owner, repo, branch);
-      const lower = String(value).toLowerCase();
-      const ownerRepo = `${owner}/${repo}`.toLowerCase();
-      const looksRepoQualified = ownerRepo && (
-        lower.startsWith(ownerRepo + "/") ||
-        lower.startsWith("blob/") ||
-        lower.startsWith("raw/") ||
-        lower.startsWith("refs/heads/") ||
-        lower.startsWith("refs/tags/") ||
-        lower.startsWith(String(branch || "main").toLowerCase() + "/")
-      );
-      if (!looksRepoQualified) {
-        p = baseDir ? `${baseDir}/${p}` : p;
-      }
-    }
-    p = normalizeDotSegments(p).replace(/^\/+/, "");
-    return p + parts.suffix;
+    return match ? match[1].toLowerCase() : "";
   }
 
-  function makeRawUrl(path, owner, repo, branch) {
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch || "main"}/${path}`;
+  function isHashUrl(url) {
+    return /^\s*#/.test(String(url || ""));
   }
 
-  function makeBlobUrl(path, owner, repo, branch) {
-    return `https://github.com/${owner}/${repo}/blob/${branch || "main"}/${path}`;
+  function isProtocolRelativeUrl(url) {
+    return /^\s*\/\//.test(String(url || ""));
   }
 
-  function rewriteUrl(url, kind, owner, repo, branch, baseDir) {
-    const clean = String(url || "").trim();
-    if (!clean || isExternalUrl(clean)) {
-      return url;
-    }
-    if (!owner || !repo) {
-      return url;
-    }
-    const path = resolveRepoPath(clean, owner, repo, branch, baseDir);
-    if (!path || isExternalUrl(path)) {
-      return url;
-    }
-    if (kind === "blob") {
-      return makeBlobUrl(path, owner, repo, branch);
-    }
-    return makeRawUrl(path, owner, repo, branch);
+  function isHttpUrl(url) {
+    return /^\s*https?:\/\//i.test(String(url || ""));
   }
 
-  function rewriteSrcset(srcset, owner, repo, branch, baseDir) {
-    if (!srcset || !owner || !repo) return srcset;
-    return String(srcset)
-      .split(",")
-      .map(part => {
-        const trimmed = part.trim();
-        if (!trimmed) return trimmed;
-        const pieces = trimmed.split(/\s+/);
-        const url = pieces.shift();
-        const suffix = pieces.length ? " " + pieces.join(" ") : "";
-        return rewriteUrl(url, "raw", owner, repo, branch, baseDir) + suffix;
-      })
-      .join(", ");
+  function isRelativeUrl(url) {
+    const value = String(url || "").trim();
+
+    if (!value) return false;
+    if (isHashUrl(value)) return true;
+    if (isProtocolRelativeUrl(value)) return false;
+    if (getUrlScheme(value)) return false;
+
+    return true;
+  }
+
+  function isAllowedDataImage(url) {
+    const settings = getSettings();
+
+    if (!settings.enableDataImages) return false;
+
+    return /^data:image\/(?:png|gif|jpe?g|webp|avif);base64,/i.test(
+      String(url || "").trim()
+    );
+  }
+
+  function isAllowedUrl(url, kind) {
+    const value = String(url || "").trim();
+    const settings = getSettings();
+
+    if (!value || isHashUrl(value) || isRelativeUrl(value)) {
+      return true;
+    }
+
+    if (isProtocolRelativeUrl(value)) {
+      return kind !== "iframe";
+    }
+
+    const scheme = getUrlScheme(value);
+
+    if (!scheme) return true;
+
+    if (scheme === "http" || scheme === "https") {
+      if (kind === "image") return settings.enableExternalImages !== false;
+      if (kind === "media") return settings.enableExternalMedia === true;
+      if (kind === "iframe") return settings.enableIframes === true;
+      return true;
+    }
+
+    if (scheme === "mailto" || scheme === "tel") {
+      return kind === "link";
+    }
+
+    if (scheme === "blob") {
+      return kind === "image";
+    }
+
+    if (scheme === "data") {
+      return kind === "image" && isAllowedDataImage(value);
+    }
+
+    return false;
+  }
+
+  function getCurrentContext(owner, repo, branch) {
+    return {
+      owner: String(owner || core?.currentOwner || "").trim(),
+      repo: String(repo || core?.currentRepo || "").trim(),
+      branch: String(branch || core?.currentBranch || "main").trim() || "main",
+      baseDir: getBaseDir()
+    };
   }
 
   function getBaseDir() {
     if (state.currentBaseDir) {
       return state.currentBaseDir;
     }
+
     if (state.currentFilePath) {
       return dirname(state.currentFilePath);
     }
-    if (core && core.currentPath) {
-      return String(core.currentPath || "").replace(/^\/+|\/+$/g, "");
+
+    if (core?.currentPath) {
+      return String(core.currentPath)
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "")
+        .replace(/\/+$/, "");
     }
+
     return "";
   }
 
-  function rewriteHtmlRelativeAssets(rawHtml, owner, repo, branch, baseDir) {
-    if (!rawHtml || !owner || !repo) return rawHtml;
-    const template = document.createElement("template");
-    template.innerHTML = String(rawHtml);
+  function setCurrentFilePath(path) {
+    const safePath = normalizeSlashes(path)
+      .replace(/^\/+/, "")
+      .replace(/\/+$/, "");
 
-    template.content.querySelectorAll("img[src]").forEach(el => {
-      el.setAttribute("src", rewriteUrl(el.getAttribute("src"), "raw", owner, repo, branch, baseDir));
-    });
-    template.content.querySelectorAll("source[src], video[src], audio[src]").forEach(el => {
-      el.setAttribute("src", rewriteUrl(el.getAttribute("src"), "raw", owner, repo, branch, baseDir));
-    });
-    template.content.querySelectorAll("video[poster]").forEach(el => {
-      el.setAttribute("poster", rewriteUrl(el.getAttribute("poster"), "raw", owner, repo, branch, baseDir));
-    });
-    template.content.querySelectorAll("iframe[src]").forEach(el => {
-      el.setAttribute("src", rewriteUrl(el.getAttribute("src"), "raw", owner, repo, branch, baseDir));
-    });
-    template.content.querySelectorAll("[srcset]").forEach(el => {
-      el.setAttribute("srcset", rewriteSrcset(el.getAttribute("srcset"), owner, repo, branch, baseDir));
-    });
-    template.content.querySelectorAll("a[href]").forEach(el => {
-      el.setAttribute("href", rewriteUrl(el.getAttribute("href"), "blob", owner, repo, branch, baseDir));
-      el.setAttribute("target", "_blank");
-      el.setAttribute("rel", "noopener noreferrer");
+    state.currentFilePath = safePath;
+    state.currentBaseDir = dirname(safePath);
+  }
+
+  function stripGitHubPathPrefix(path, owner, repo, branch) {
+    let value = normalizeSlashes(path).replace(/^\/+/, "");
+
+    const safeOwner = String(owner || "").trim();
+    const safeRepo = String(repo || "").trim();
+    const safeBranch = String(branch || "main").trim();
+
+    const ownerRepoPrefix = `${safeOwner}/${safeRepo}/`;
+    const lowerValue = value.toLowerCase();
+    const lowerOwnerRepo = ownerRepoPrefix.toLowerCase();
+
+    if (
+      safeOwner &&
+      safeRepo &&
+      lowerValue.startsWith(`${lowerOwnerRepo}blob/`)
+    ) {
+      const rest = value.slice(`${ownerRepoPrefix}blob/`.length);
+      const branchPrefix = `${safeBranch}/`;
+
+      if (rest.startsWith(branchPrefix)) {
+        return rest.slice(branchPrefix.length);
+      }
+
+      return rest;
+    }
+
+    if (
+      safeOwner &&
+      safeRepo &&
+      lowerValue.startsWith(`${lowerOwnerRepo}raw/`)
+    ) {
+      const rest = value.slice(`${ownerRepoPrefix}raw/`.length);
+      const branchPrefix = `${safeBranch}/`;
+
+      if (rest.startsWith(branchPrefix)) {
+        return rest.slice(branchPrefix.length);
+      }
+
+      return rest;
+    }
+
+    if (
+      safeOwner &&
+      safeRepo &&
+      lowerValue.startsWith(lowerOwnerRepo)
+    ) {
+      return value.slice(ownerRepoPrefix.length);
+    }
+
+    if (lowerValue.startsWith("blob/")) {
+      const rest = value.slice("blob/".length);
+      const branchPrefix = `${safeBranch}/`;
+
+      if (rest.startsWith(branchPrefix)) {
+        return rest.slice(branchPrefix.length);
+      }
+    }
+
+    if (lowerValue.startsWith("raw/")) {
+      const rest = value.slice("raw/".length);
+      const branchPrefix = `${safeBranch}/`;
+
+      if (rest.startsWith(branchPrefix)) {
+        return rest.slice(branchPrefix.length);
+      }
+    }
+
+    return value;
+  }
+
+  function resolveRepoPath(input, owner, repo, branch, baseDir) {
+    const value = String(input || "").trim();
+
+    if (!value || isHashUrl(value) || !isRelativeUrl(value)) {
+      return value;
+    }
+
+    const { path, suffix } = splitUrlSuffix(value);
+    let result = path.replace(/^['"]|['"]$/g, "").trim();
+
+    if (!result) return suffix;
+
+    if (result.startsWith("/")) {
+      result = result.replace(/^\/+/, "");
+    } else {
+      const stripped = stripGitHubPathPrefix(
+        result,
+        owner,
+        repo,
+        branch
+      );
+
+      const wasQualified = stripped !== result;
+
+      result = wasQualified
+        ? stripped
+        : baseDir
+          ? `${baseDir}/${result}`
+          : result;
+    }
+
+    return `${normalizeDotSegments(result).replace(/^\/+/, "")}${suffix}`;
+  }
+
+  function rewriteUrl(url, kind, owner, repo, branch, baseDir) {
+    const value = String(url || "").trim();
+
+    if (!value) return "";
+
+    if (!isAllowedUrl(value, kind)) {
+      return "";
+    }
+
+    if (!isRelativeUrl(value) || isHashUrl(value)) {
+      return value;
+    }
+
+    if (!owner || !repo) {
+      return value;
+    }
+
+    const resolved = resolveRepoPath(
+      value,
+      owner,
+      repo,
+      branch,
+      baseDir
+    );
+
+    if (!resolved) return "";
+
+    // 修复点：对路径部分进行分段 URL 编码，保留 suffix (? 或 #) 不被错误编码
+    const { path: resolvedPath, suffix } = splitUrlSuffix(resolved);
+    const encodedPath = resolvedPath.split("/").map(encodeURIComponent).join("/");
+    const finalPath = `${encodedPath}${suffix}`;
+
+    const safeBranch = encodeURIComponent(branch || "main")
+      .replace(/%2F/gi, "/");
+
+    if (kind === "link") {
+      return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/blob/${safeBranch}/${finalPath}`;
+    }
+
+    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${safeBranch}/${finalPath}`;
+  }
+
+  function parseSrcset(srcset) {
+    const input = String(srcset || "").trim();
+
+    if (!input) return [];
+
+    const candidates = [];
+    let current = "";
+    let quote = "";
+    let parentheses = 0;
+
+    for (let index = 0; index < input.length; index++) {
+      const char = input[index];
+
+      if (quote) {
+        current += char;
+
+        if (char === quote && input[index - 1] !== "\\") {
+          quote = "";
+        }
+
+        continue;
+      }
+
+      if (char === "'" || char === '"') {
+        quote = char;
+        current += char;
+        continue;
+      }
+
+      if (char === "(") {
+        parentheses++;
+        current += char;
+        continue;
+      }
+
+      if (char === ")") {
+        parentheses = Math.max(0, parentheses - 1);
+        current += char;
+        continue;
+      }
+
+      if (char === "," && parentheses === 0) {
+        if (current.trim()) {
+          candidates.push(current.trim());
+        }
+
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current.trim()) {
+      candidates.push(current.trim());
+    }
+
+    return candidates;
+  }
+
+  function rewriteSrcset(srcset, owner, repo, branch, baseDir) {
+    return parseSrcset(srcset)
+      .map(candidate => {
+        const pieces = candidate.split(/\s+/);
+        const source = pieces.shift();
+        const descriptor = pieces.join(" ");
+
+        if (!source || /^data:/i.test(source)) {
+          return "";
+        }
+
+        const rewritten = rewriteUrl(
+          source,
+          "image",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (!rewritten) return "";
+
+        return descriptor
+          ? `${rewritten} ${descriptor}`
+          : rewritten;
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  function isAllowedIframeHost(url) {
+    const settings = getSettings();
+
+    if (!settings.enableIframes) return false;
+
+    try {
+      const parsed = new URL(url);
+      const hosts = Array.isArray(settings.allowedIframeHosts)
+        ? settings.allowedIframeHosts
+        : [];
+
+      return hosts.includes(parsed.hostname.toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
+  function sanitizeRawHtml(rawHtml, owner, repo, branch, baseDir) {
+    const settings = getSettings();
+
+    if (!settings.enableRawHtml) {
+      return escapeHtml(rawHtml);
+    }
+
+    const template = document.createElement("template");
+    template.innerHTML = String(rawHtml || "");
+
+    const allowedTags = new Set([
+      "a",
+      "abbr",
+      "article",
+      "aside",
+      "audio",
+      "b",
+      "blockquote",
+      "br",
+      "caption",
+      "code",
+      "col",
+      "colgroup",
+      "dd",
+      "del",
+      "details",
+      "div",
+      "dl",
+      "dt",
+      "em",
+      "figure",
+      "figcaption",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "header",
+      "hr",
+      "i",
+      "iframe",
+      "img",
+      "input",
+      "kbd",
+      "li",
+      "main",
+      "mark",
+      "ol",
+      "p",
+      "picture",
+      "pre",
+      "s",
+      "section",
+      "small",
+      "source",
+      "span",
+      "strong",
+      "sub",
+      "summary",
+      "sup",
+      "table",
+      "tbody",
+      "td",
+      "tfoot",
+      "th",
+      "thead",
+      "tr",
+      "u",
+      "ul",
+      "var",
+      "video"
+    ]);
+
+    const allowedAttrsByTag = {
+      a: new Set([
+        "href",
+        "title",
+        "target",
+        "rel",
+        "id",
+        "class",
+        "name"
+      ]),
+
+      img: new Set([
+        "src",
+        "srcset",
+        "sizes",
+        "alt",
+        "title",
+        "width",
+        "height",
+        "loading",
+        "align",
+        "id",
+        "class"
+      ]),
+
+      video: new Set([
+        "src",
+        "poster",
+        "controls",
+        "autoplay",
+        "muted",
+        "loop",
+        "playsinline",
+        "preload",
+        "width",
+        "height",
+        "id",
+        "class"
+      ]),
+
+      audio: new Set([
+        "src",
+        "controls",
+        "autoplay",
+        "muted",
+        "loop",
+        "preload",
+        "id",
+        "class"
+      ]),
+
+      source: new Set([
+        "src",
+        "srcset",
+        "sizes",
+        "type",
+        "media"
+      ]),
+
+      iframe: new Set([
+        "src",
+        "width",
+        "height",
+        "title",
+        "loading",
+        "referrerpolicy",
+        "sandbox",
+        "allowfullscreen"
+      ]),
+
+      input: new Set([
+        "type",
+        "checked",
+        "disabled"
+      ]),
+
+      td: new Set([
+        "colspan",
+        "rowspan",
+        "align",
+        "id",
+        "class"
+      ]),
+
+      th: new Set([
+        "colspan",
+        "rowspan",
+        "align",
+        "scope",
+        "id",
+        "class"
+      ]),
+
+      ol: new Set([
+        "start",
+        "id",
+        "class"
+      ]),
+
+      col: new Set([
+        "span",
+        "width"
+      ]),
+
+      details: new Set([
+        "open",
+        "id",
+        "class"
+      ])
+    };
+
+    const commonAttrs = new Set([
+      "id",
+      "class",
+      "title",
+      "lang",
+      "role",
+      "align"
+    ]);
+
+    const removeEntirely = [
+      "script",
+      "style",
+      "link",
+      "meta",
+      "base",
+      "object",
+      "embed",
+      "applet",
+      "form",
+      "textarea",
+      "select",
+      "option",
+      "button",
+      "svg",
+      "math"
+    ];
+
+    template.content
+      .querySelectorAll(removeEntirely.join(","))
+      .forEach(node => node.remove());
+
+    const elements = Array.from(
+      template.content.querySelectorAll("*")
+    );
+
+    elements.forEach(element => {
+      const tag = element.tagName.toLowerCase();
+
+      if (!allowedTags.has(tag)) {
+        const parent = element.parentNode;
+
+        if (!parent) {
+          element.remove();
+          return;
+        }
+
+        while (element.firstChild) {
+          parent.insertBefore(element.firstChild, element);
+        }
+
+        element.remove();
+        return;
+      }
+
+      if (tag === "input") {
+        const type = String(
+          element.getAttribute("type") || ""
+        ).toLowerCase();
+
+        if (type !== "checkbox") {
+          element.remove();
+          return;
+        }
+      }
+
+      if (tag === "iframe" && !settings.enableIframes) {
+        element.remove();
+        return;
+      }
+
+      const tagAttrs = allowedAttrsByTag[tag] || new Set();
+
+      Array.from(element.attributes).forEach(attr => {
+        const name = attr.name.toLowerCase();
+        const allowed =
+          commonAttrs.has(name) || tagAttrs.has(name);
+
+        if (
+          name.startsWith("on") ||
+          name === "style" ||
+          name === "srcdoc" ||
+          name === "xmlns" ||
+          !allowed
+        ) {
+          element.removeAttribute(attr.name);
+        }
+      });
+
+      if (element.hasAttribute("id")) {
+        const id = element.getAttribute("id") || "";
+
+        if (/^gp-/i.test(id)) {
+          element.removeAttribute("id");
+        }
+      }
+
+      if (element.hasAttribute("class")) {
+        const classes = String(
+          element.getAttribute("class") || ""
+        )
+          .split(/\s+/)
+          .filter(Boolean)
+          .filter(className => !/^gp-/i.test(className))
+          .join(" ");
+
+        if (classes) {
+          element.setAttribute("class", classes);
+        } else {
+          element.removeAttribute("class");
+        }
+      }
+
+      if (tag === "a") {
+        const href = rewriteUrl(
+          element.getAttribute("href"),
+          "link",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (href) {
+          element.setAttribute("href", href);
+
+          if (settings.openLinksInNewTab) {
+            element.setAttribute("target", "_blank");
+            element.setAttribute(
+              "rel",
+              "noopener noreferrer"
+            );
+          } else {
+            element.removeAttribute("target");
+            element.removeAttribute("rel");
+          }
+        } else {
+          element.removeAttribute("href");
+          element.removeAttribute("target");
+          element.removeAttribute("rel");
+        }
+      }
+
+      if (tag === "img") {
+        const src = rewriteUrl(
+          element.getAttribute("src"),
+          "image",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (src) {
+          element.setAttribute("src", src);
+          element.setAttribute("loading", "lazy");
+        } else {
+          element.removeAttribute("src");
+        }
+
+        if (element.hasAttribute("srcset")) {
+          const srcset = rewriteSrcset(
+            element.getAttribute("srcset"),
+            owner,
+            repo,
+            branch,
+            baseDir
+          );
+
+          if (srcset) {
+            element.setAttribute("srcset", srcset);
+          } else {
+            element.removeAttribute("srcset");
+          }
+        }
+      }
+
+      if (
+        ["video", "audio", "source"].includes(tag) &&
+        element.hasAttribute("src")
+      ) {
+        const src = rewriteUrl(
+          element.getAttribute("src"),
+          "media",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (src) {
+          element.setAttribute("src", src);
+        } else {
+          element.removeAttribute("src");
+        }
+      }
+
+      if (tag === "source" && element.hasAttribute("srcset")) {
+        const srcset = rewriteSrcset(
+          element.getAttribute("srcset"),
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (srcset) {
+          element.setAttribute("srcset", srcset);
+        } else {
+          element.removeAttribute("srcset");
+        }
+      }
+
+      if (tag === "video" && element.hasAttribute("poster")) {
+        const poster = rewriteUrl(
+          element.getAttribute("poster"),
+          "image",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (poster) {
+          element.setAttribute("poster", poster);
+        } else {
+          element.removeAttribute("poster");
+        }
+      }
+
+      if (tag === "iframe") {
+        const src = rewriteUrl(
+          element.getAttribute("src"),
+          "iframe",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        if (!src || !isAllowedIframeHost(src)) {
+          element.remove();
+          return;
+        }
+
+        element.setAttribute("src", src);
+        element.setAttribute("loading", "lazy");
+        element.setAttribute("referrerpolicy", "no-referrer");
+        element.setAttribute(
+          "sandbox",
+          "allow-scripts allow-presentation"
+        );
+
+        element.removeAttribute("allow");
+      }
     });
 
     return template.innerHTML;
   }
 
-  function sanitizeMarkdownHtml(rawHtml) {
-    if (!window.DOMPurify) return rawHtml;
-    return window.DOMPurify.sanitize(String(rawHtml), {
-      ALLOWED_TAGS: [
-        "h1", "h2", "h3", "h4", "h5", "h6",
-        "p", "br", "hr", "a", "img",
-        "strong", "em", "b", "i", "u", "s", "del",
-        "code", "pre", "blockquote",
-        "ul", "ol", "li",
-        "table", "thead", "tbody", "tfoot", "tr", "th", "td",
-        "div", "span", "section", "article",
-        "details", "summary", "kbd",
-        "video", "audio", "source", "iframe"
-      ],
-      ALLOWED_ATTR: [
-        "href", "src", "srcset", "poster", "alt", "title", "class", "id",
-        "target", "rel", "align", "width", "height", "loading",
-        "controls", "muted", "loop", "autoplay", "playsinline",
-        "frameborder", "allow", "allowfullscreen", "sandbox",
-        "referrerpolicy", "colspan", "rowspan"
-      ],
-      ADD_ATTR: ["target", "rel"],
-      ALLOW_DATA_ATTR: false
-    });
+  function wrapCodeToken(type, value) {
+    return `<span class="gp-code-${type}">${escapeHtml(value)}</span>`;
   }
 
-  function postProcessLinks(container) {
-    if (!container) return;
-    container.querySelectorAll("a[href]").forEach(a => {
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-    });
+  function highlightPlainCodeSegment(source, language) {
+    const lang = String(language || "")
+      .toLowerCase()
+      .replace(/^language-/, "");
+
+    const keywordPatterns = {
+      js: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|typeof|instanceof|in|of|this|super|static|true|false|null|undefined)\b/g,
+
+      py: /\b(def|class|return|if|elif|else|for|while|in|import|from|as|try|except|finally|with|lambda|yield|async|await|pass|break|continue|True|False|None|and|or|not|is)\b/g,
+
+      sh: /\b(if|then|fi|for|in|do|done|case|esac|while|function|export|local|readonly|sudo|cd|echo|printf|grep|sed|awk|curl|git|npm|pnpm|yarn)\b/g,
+
+      sql: /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|ALTER|DROP|TABLE|INDEX|VIEW|DATABASE|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|AS|AND|OR|NOT|NULL|PRIMARY|KEY|FOREIGN|REFERENCES)\b/gi,
+
+      java: /\b(public|private|protected|static|final|class|interface|extends|implements|new|return|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|throws|void|int|long|double|float|boolean|char|true|false|null|package|import)\b/g
+    };
+
+    let group = "js";
+
+    if (["py", "python"].includes(lang)) {
+      group = "py";
+    } else if (["sh", "bash", "shell", "zsh", "fish"].includes(lang)) {
+      group = "sh";
+    } else if (
+      ["sql", "mysql", "postgres", "postgresql", "sqlite"].includes(lang)
+    ) {
+      group = "sql";
+    } else if (
+      [
+        "java",
+        "c",
+        "cpp",
+        "c++",
+        "cs",
+        "csharp",
+        "go",
+        "rust",
+        "php",
+        "kotlin",
+        "swift"
+      ].includes(lang)
+    ) {
+      group = "java";
+    }
+
+    let html = escapeHtml(source);
+
+    html = html.replace(
+      keywordPatterns[group],
+      `<span class="gp-code-keyword">$1</span>`
+    );
+
+    html = html.replace(
+      /\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi,
+      `<span class="gp-code-number">$&</span>`
+    );
+
+    html = html.replace(
+      /\b([a-zA-Z_$][\w$]*)(?=\s*\()/g,
+      `<span class="gp-code-function">$1</span>`
+    );
+
+    if (group === "sh") {
+      html = html.replace(
+        /(\$\{?[\w@*#?$!-]+\}?)/g,
+        `<span class="gp-code-property">$1</span>`
+      );
+    }
+
+    return html;
   }
 
-  function highlightLater() {
-    setTimeout(() => {
-      if (!window.hljs) return;
-      document.querySelectorAll(".gp-mdp-body pre code").forEach(block => {
-        if (block.dataset.gpMdpHighlighted === "1") return;
-        try {
-          window.hljs.highlightElement(block);
-          block.dataset.gpMdpHighlighted = "1";
-        } catch {}
-      });
-      document.querySelectorAll(".gp-mdp-body").forEach(postProcessLinks);
-    }, 50);
-  }
+  function highlightHtmlCode(code) {
+    const escaped = escapeHtml(code);
 
-  // 用 marked 把文本渲染成最终 HTML（库就绪时使用）
-  function renderWithMarked(text, owner, repo, branch, baseDir) {
-    const rawHtml = window.marked.parse
-      ? window.marked.parse(String(text))
-      : window.marked(String(text));
-    const rewrittenHtml = rewriteHtmlRelativeAssets(rawHtml, owner, repo, branch, baseDir);
-    return sanitizeMarkdownHtml(rewrittenHtml);
-  }
+    return escaped.replace(
+      /(&lt;\/?)([a-zA-Z][\w:-]*)([\s\S]*?)(\/?&gt;)/g,
+      (_, open, tag, attrs, close) => {
+        const safeAttrs = attrs.replace(
+          /([\w:-]+)(\s*=\s*)(&quot;(?:\\.|[^&])*?&quot;|&#39;(?:\\.|[^&])*?&#39;|[^\s]+)/g,
+          `<span class="gp-code-attr">$1</span>$2<span class="gp-code-string">$3</span>`
+        );
 
-  // 库异步加载完成后，把所有 fallback 占位内容替换成真正渲染结果
-  function reRenderPending() {
-    if (!state.ready || !window.marked || !window.DOMPurify) return;
-    document.querySelectorAll("[data-gp-mdp-pending]").forEach(el => {
-      const id = el.getAttribute("data-gp-mdp-pending");
-      const ctx = pendingRenders.get(id);
-      if (!ctx) {
-        el.removeAttribute("data-gp-mdp-pending");
-        return;
+        return (
+          `<span class="gp-code-punctuation">${open}</span>` +
+          `<span class="gp-code-tag">${tag}</span>` +
+          safeAttrs +
+          `<span class="gp-code-punctuation">${close}</span>`
+        );
       }
-      try {
-        const clean = renderWithMarked(ctx.text, ctx.owner, ctx.repo, ctx.branch, ctx.baseDir);
-        el.classList.add("markdown-body");
-        el.removeAttribute("data-gp-mdp-pending");
-        el.innerHTML = clean;
-        pendingRenders.delete(id);
-      } catch (e) {
-        console.warn("[MarkdownRenderPlus] re-render failed:", e);
-      }
-    });
-    // 同时移除可能残留的加载提示
-    document.querySelectorAll(".gp-mdp-loading-note").forEach(n => n.remove());
-    highlightLater();
+    );
   }
 
-  // 备用解析：强制覆盖时显示纯文本，并记录待库就绪后补渲染
+  function highlightCssCode(code) {
+    return String(code || "")
+      .split("\n")
+      .map(line => {
+        const escaped = escapeHtml(line);
+
+        if (/^\s*\/\*/.test(line) || /\*\/\s*$/.test(line)) {
+          return `<span class="gp-code-comment">${escaped}</span>`;
+        }
+
+        if (/^\s*@/.test(line)) {
+          return escaped.replace(
+            /^(\s*@[\w-]+)/,
+            `<span class="gp-code-keyword">$1</span>`
+          );
+        }
+
+        if (line.includes("{")) {
+          return escaped.replace(
+            /^(\s*[^{}]+)(\s*\{)/,
+            `<span class="gp-code-selector">$1</span>$2`
+          );
+        }
+
+        return escaped.replace(
+          /^(\s*)([\w-]+)(\s*:)(.*)$/,
+          `$1<span class="gp-code-property">$2</span>$3$4`
+        );
+      })
+      .join("\n");
+  }
+
+  function highlightJsonCode(code) {
+    const source = String(code || "");
+    const tokenPattern =
+      /"(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi;
+
+    let output = "";
+    let cursor = 0;
+    let match;
+
+    while ((match = tokenPattern.exec(source))) {
+      output += escapeHtml(source.slice(cursor, match.index));
+
+      const token = match[0];
+      const nextText = source.slice(tokenPattern.lastIndex);
+      const isProperty = /^\s*:/.test(nextText);
+
+      if (/^"/.test(token)) {
+        output += wrapCodeToken(
+          isProperty ? "property" : "string",
+          token
+        );
+      } else if (/^(true|false|null)$/i.test(token)) {
+        output += wrapCodeToken("keyword", token);
+      } else {
+        output += wrapCodeToken("number", token);
+      }
+
+      cursor = tokenPattern.lastIndex;
+    }
+
+    output += escapeHtml(source.slice(cursor));
+
+    return output;
+  }
+
+  function highlightCode(code, language) {
+    const settings = getSettings();
+
+    if (!settings.enableCodeHighlight) {
+      return escapeHtml(code);
+    }
+
+    const lang = String(language || "")
+      .toLowerCase()
+      .trim()
+      .replace(/^language-/, "");
+
+    if (["html", "htm", "xml", "svg", "vue"].includes(lang)) {
+      return highlightHtmlCode(code);
+    }
+
+    if (["css", "scss", "sass", "less"].includes(lang)) {
+      return highlightCssCode(code);
+    }
+
+    if (["json", "jsonc"].includes(lang)) {
+      return highlightJsonCode(code);
+    }
+
+    const source = String(code || "");
+
+    const tokenPattern =
+      /\/\*[\s\S]*?\*\/|\/\/[^\n]*|--[^\n]*|#[^\n]*|`(?:\\.|[^`])*`|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'/g;
+
+    let output = "";
+    let cursor = 0;
+    let match;
+
+    while ((match = tokenPattern.exec(source))) {
+      output += highlightPlainCodeSegment(
+        source.slice(cursor, match.index),
+        lang
+      );
+
+      const token = match[0];
+
+      if (
+        token.startsWith("//") ||
+        token.startsWith("/*") ||
+        token.startsWith("--") ||
+        token.startsWith("#")
+      ) {
+        output += wrapCodeToken("comment", token);
+      } else {
+        output += wrapCodeToken("string", token);
+      }
+
+      cursor = tokenPattern.lastIndex;
+    }
+
+    output += highlightPlainCodeSegment(
+      source.slice(cursor),
+      lang
+    );
+
+    return output;
+  }
+
+  // ===== 修复点：行内强调解析（彻底解决相邻强调互相吞字符的 Bug）=====
+  function renderPlainInline(value) {
+    let html = escapeHtml(value);
+
+    // 加粗（**）：使用 (?:[^*]|\*(?!\*))+? 确保内部绝不会匹配到连续的 **，防止跨越相邻的加粗块
+    html = html.replace(
+      /\*\*(?!\s)((?:[^*]|\*(?!\*))+?)(?<!\s)\*\*/g,
+      `<strong>$1</strong>`
+    );
+    
+    // 加粗（__）：同上，防止内部包含 __ 导致跨越匹配，并保留单词边界限制
+    html = html.replace(
+      /(^|[^\w])__(?!\s)((?:[^_]|_(?!_))+?)(?<!\s)__(?![_\w])/g,
+      `$1<strong>$2</strong>`
+    );
+
+    // 删除线（~~）：同上，防止内部包含 ~~ 导致跨越匹配
+    html = html.replace(
+      /~~(?!\s)((?:[^~]|~(?!~))+?)(?<!\s)~~/g,
+      `<del>$1</del>`
+    );
+
+    // 斜体（*）：使用零宽断言，不消费前后字符，支持相邻强调
+    html = html.replace(
+      /(?<![\*\w])\*(?!\s)([^\*\n]+?)(?<!\s)\*(?![\*\w])/g,
+      `<em>$1</em>`
+    );
+
+    // 斜体（_）：单词内的 _ 不视为强调
+    html = html.replace(
+      /(?<![\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![\w])/g,
+      `<em>$1</em>`
+    );
+
+    return html;
+  }
+
+  function formatText(text, owner, repo, branch, baseDir) {
+    const source = String(text || "");
+    const tokens = [];
+    const settings = getSettings();
+
+    function saveToken(html) {
+      const id = `\u0000MDP_TOKEN_${tokens.length}\u0000`;
+      tokens.push(html);
+      return id;
+    }
+
+    // ===== 修复点：行内 HTML 正则重构，移除脆弱的反向引用，支持属性内包含 > 的情况 =====
+    const inlineHtmlPattern =
+      "<[a-zA-Z][\\w:-]*\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>[\\s\\S]*?<\\/[a-zA-Z][\\w:-]*\\s*>" +
+      "|<[a-zA-Z][\\w:-]*\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*\\/?>" +
+      "|<\\/[a-zA-Z][\\w:-]*\\s*>";
+
+    const tokenPattern = new RegExp(
+      "`([^`]+)`" +
+        "|!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+[\"'][^\"']*[\"'])?\\)" +
+        "|\\[([^\\]]+)\\]\\(([^)\\s]+)(?:\\s+[\"'][^\"']*[\"'])?\\)" +
+        "|(" + inlineHtmlPattern + ")",
+      "g"
+    );
+
+    let output = "";
+    let cursor = 0;
+    let match;
+
+    while ((match = tokenPattern.exec(source))) {
+      output += renderPlainInline(source.slice(cursor, match.index));
+
+      if (match[1] != null) {
+        output += saveToken(
+          `<code>${escapeHtml(match[1])}</code>`
+        );
+      } else if (match[2] != null) {
+        const src = rewriteUrl(
+          match[3],
+          "image",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        output += saveToken(
+          src
+            ? `<img src="${escapeAttr(src)}" alt="${escapeAttr(match[2])}" loading="lazy">`
+            : `<span>${escapeHtml(match[2])}</span>`
+        );
+      } else if (match[4] != null) {
+        const href = rewriteUrl(
+          match[5],
+          "link",
+          owner,
+          repo,
+          branch,
+          baseDir
+        );
+
+        const label = renderPlainInline(match[4]);
+
+        output += saveToken(
+          href
+            ? `<a href="${escapeAttr(href)}"${
+                settings.openLinksInNewTab
+                  ? ` target="_blank" rel="noopener noreferrer"`
+                  : ""
+              }>${label}</a>`
+            : `<span>${label}</span>`
+        );
+      } else if (match[6] != null) {
+        output += saveToken(
+          sanitizeRawHtml(
+            match[6],
+            owner,
+            repo,
+            branch,
+            baseDir
+          )
+        );
+      }
+
+      cursor = tokenPattern.lastIndex;
+    }
+
+    output += renderPlainInline(source.slice(cursor));
+
+    tokens.forEach((html, index) => {
+      output = output.replace(
+        `\u0000MDP_TOKEN_${index}\u0000`,
+        () => html
+      );
+    });
+
+    return output;
+  }
+
+  // ===== 修复点：允许单破折号与单列表格 =====
+  function isTableSeparator(line) {
+    const value = String(line || "").trim();
+
+    if (!value.includes("-")) return false;
+    // 修复点：强制要求包含 |，防止将普通的水平线 (---) 误判为表格分隔符
+    if (!value.includes("|")) return false;
+    if (!/^[\s|:\-]+$/.test(value)) return false;
+
+    const cells = value
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map(cell => cell.trim());
+
+    if (!cells.length) return false;
+
+    return cells.every(cell => /^:?-+:?$/.test(cell));
+  }
+
+  function splitTableRow(line) {
+    const value = String(line || "")
+      .trim()
+      .replace(/^\||\|$/g, "");
+
+    const cells = [];
+    let current = "";
+    let escaped = false;
+    let code = false;
+
+    for (let index = 0; index < value.length; index++) {
+      const char = value[index];
+
+      if (escaped) {
+        current += char;
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        current += char;
+        continue;
+      }
+
+      if (char === "`") {
+        code = !code;
+        current += char;
+        continue;
+      }
+
+      if (char === "|" && !code) {
+        cells.push(current.trim());
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    cells.push(current.trim());
+
+    return cells.map(cell => cell.replace(/\\\|/g, "|"));
+  }
+
+  function isRawHtmlBlockStart(line) {
+    return /^\s*<(details|div|section|article|table|video|audio|iframe|picture|figure|blockquote|ul|ol|dl|pre|h[1-6]|p)\b/i.test(
+      String(line || "")
+    );
+  }
+
+  function getHtmlBlockTagName(line) {
+    const match = String(line || "").match(
+      /^\s*<([a-zA-Z][\w:-]*)\b/i
+    );
+
+    return match ? match[1].toLowerCase() : "";
+  }
+
+  function parseMarkdown(text, owner, repo, branch) {
+    const { baseDir } = getCurrentContext(owner, repo, branch);
+
+    const lines = String(text || "")
+      .replace(/\r\n?/g, "\n")
+      .split("\n");
+
+    const html = [];
+    let index = 0;
+    let paragraphLines = [];
+
+    function flushParagraph() {
+      if (!paragraphLines.length) return;
+
+      html.push(
+        `<p>${paragraphLines
+          .map(line =>
+            formatText(line, owner, repo, branch, baseDir)
+          )
+          .join("<br>")}</p>`
+      );
+
+      paragraphLines = [];
+    }
+
+    function renderList(ordered) {
+      const items = [];
+      const tag = ordered ? "ol" : "ul";
+      const pattern = ordered
+        ? /^\s*(\d+)[.)]\s+(.+)$/
+        : /^\s*[-+*]\s+(.+)$/;
+
+      let start = "";
+
+      while (index < lines.length) {
+        const match = lines[index].match(pattern);
+
+        if (!match) break;
+
+        const content = ordered ? match[2] : match[1];
+
+        if (ordered && !items.length && Number(match[1]) !== 1) {
+          start = ` start="${escapeAttr(match[1])}"`;
+        }
+
+        let value = content;
+        let checkbox = "";
+
+        const taskMatch = value.match(
+          /^\[([ xX])\]\s+([\s\S]*)$/
+        );
+
+        if (taskMatch) {
+          const checked = taskMatch[1].toLowerCase() === "x";
+          value = taskMatch[2];
+
+          checkbox =
+            `<input type="checkbox" disabled${
+              checked ? " checked" : ""
+            }> `;
+        }
+
+        items.push(
+          `<li>${checkbox}${formatText(
+            value,
+            owner,
+            repo,
+            branch,
+            baseDir
+          )}</li>`
+        );
+
+        index++;
+      }
+
+      html.push(`<${tag}${start}>${items.join("")}</${tag}>`);
+    }
+
+    while (index < lines.length) {
+      const line = lines[index];
+
+      if (!line.trim()) {
+        flushParagraph();
+        index++;
+        continue;
+      }
+
+      const fence = line.match(/^\s*(`{3,}|~{3,})\s*([^`]*)$/);
+
+      if (fence) {
+        flushParagraph();
+
+        const marker = fence[1];
+        const language = String(fence[2] || "")
+          .trim()
+          .split(/\s+/)[0];
+
+        const codeLines = [];
+        index++;
+
+        const closePattern = new RegExp(
+          `^\\s*${marker[0]}{${marker.length},}\\s*$`
+        );
+
+        while (
+          index < lines.length &&
+          !closePattern.test(lines[index])
+        ) {
+          codeLines.push(lines[index]);
+          index++;
+        }
+
+        if (index < lines.length) {
+          index++;
+        }
+
+        const code = codeLines.join("\n");
+
+        html.push(
+          `<pre><code${
+            language
+              ? ` class="language-${escapeAttr(language)}"`
+              : ""
+          }>${highlightCode(code, language)}</code></pre>`
+        );
+
+        continue;
+      }
+
+      // ===== 修复点：Setext 二级标题优先于 <hr> 识别 =====
+      if (
+        index + 1 < lines.length &&
+        line.trim() &&
+        !/^\s*[#>\-+*]/.test(line) &&
+        /^\s*(=+|-+)\s*$/.test(lines[index + 1])
+      ) {
+        flushParagraph();
+
+        const level = /^\s*=+\s*$/.test(lines[index + 1]) ? 1 : 2;
+
+        html.push(
+          `<h${level}>${formatText(
+            line.trim(),
+            owner,
+            repo,
+            branch,
+            baseDir
+          )}</h${level}>`
+        );
+
+        index += 2;
+        continue;
+      }
+
+      if (isRawHtmlBlockStart(line)) {
+        flushParagraph();
+
+        const tagName = getHtmlBlockTagName(line);
+        const rawHtmlLines = [];
+        let depth = 0;
+        let foundClosingTag = false;
+
+        while (index < lines.length) {
+          const currentLine = lines[index];
+
+          // ===== 修复点：HTML 块深度统计正则重构，支持属性内包含 > 的情况 =====
+          const openTags =
+            currentLine.match(
+              new RegExp(`<${tagName}\\b(?:[^>"']|"[^"]*"|'[^']*')*>`, "gi")
+            ) || [];
+
+          const closeTags =
+            currentLine.match(
+              new RegExp(`</${tagName}\\s*>`, "gi")
+            ) || [];
+
+          const selfClosing =
+            currentLine.match(
+              new RegExp(`<${tagName}\\b(?:[^>"']|"[^"]*"|'[^']*')*\\/\\s*>`, "gi")
+            ) || [];
+
+          depth += openTags.length - selfClosing.length;
+          depth -= closeTags.length;
+
+          if (closeTags.length) {
+            foundClosingTag = true;
+          }
+
+          rawHtmlLines.push(currentLine);
+          index++;
+
+          if (foundClosingTag && depth <= 0) {
+            break;
+          }
+
+          if (
+            ["img", "input", "br", "hr", "source"].includes(tagName) ||
+            /\/>\s*$/.test(currentLine)
+          ) {
+            break;
+          }
+        }
+
+        html.push(
+          sanitizeRawHtml(
+            rawHtmlLines.join("\n"),
+            owner,
+            repo,
+            branch,
+            baseDir
+          )
+        );
+
+        continue;
+      }
+
+      const heading = line.match(
+        /^(#{1,6})\s+(.+?)\s*#*\s*$/
+      );
+
+      if (heading) {
+        flushParagraph();
+
+        const level = heading[1].length;
+
+        html.push(
+          `<h${level}>${formatText(
+            heading[2],
+            owner,
+            repo,
+            branch,
+            baseDir
+          )}</h${level}>`
+        );
+
+        index++;
+        continue;
+      }
+
+      if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+        flushParagraph();
+        html.push("<hr>");
+        index++;
+        continue;
+      }
+
+      if (/^\s*>\s?/.test(line)) {
+        flushParagraph();
+
+        const quoteLines = [];
+
+        while (
+          index < lines.length &&
+          /^\s*>\s?/.test(lines[index])
+        ) {
+          quoteLines.push(
+            lines[index].replace(/^\s*>\s?/, "")
+          );
+
+          index++;
+        }
+
+        html.push(
+          `<blockquote><p>${quoteLines
+            .map(item =>
+              formatText(item, owner, repo, branch, baseDir)
+            )
+            .join("<br>")}</p></blockquote>`
+        );
+
+        continue;
+      }
+
+      if (/^\s*[-+*]\s+/.test(line)) {
+        flushParagraph();
+        renderList(false);
+        continue;
+      }
+
+      if (/^\s*\d+[.)]\s+/.test(line)) {
+        flushParagraph();
+        renderList(true);
+        continue;
+      }
+
+      if (
+        index + 1 < lines.length &&
+        line.includes("|") &&
+        isTableSeparator(lines[index + 1])
+      ) {
+        flushParagraph();
+
+        const headers = splitTableRow(line);
+        index += 2;
+
+        const rows = [];
+
+        while (
+          index < lines.length &&
+          lines[index].trim() &&
+          lines[index].includes("|")
+        ) {
+          rows.push(splitTableRow(lines[index]));
+          index++;
+        }
+
+        const thead = headers
+          .map(cell => {
+            return `<th>${formatText(
+              cell,
+              owner,
+              repo,
+              branch,
+              baseDir
+            )}</th>`;
+          })
+          .join("");
+
+        const tbody = rows
+          .map(row => {
+            const cells = headers
+              .map((_, cellIndex) => {
+                return `<td>${formatText(
+                  row[cellIndex] || "",
+                  owner,
+                  repo,
+                  branch,
+                  baseDir
+                )}</td>`;
+              })
+              .join("");
+
+            return `<tr>${cells}</tr>`;
+          })
+          .join("");
+
+        html.push(
+          `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`
+        );
+
+        continue;
+      }
+
+      paragraphLines.push(line);
+      index++;
+    }
+
+    flushParagraph();
+
+    return `
+      <div class="markdown-body gp-mdp-body">
+        ${html.join("\n")}
+      </div>
+    `;
+  }
+
   function fallbackParse(text, owner, repo, branch) {
-    if (FORCE_OVERRIDE) {
-      // 强制覆盖模式：先显示纯文本占位，记录上下文，待库加载完成后补渲染
-      const id = "gp-mdp-pending-" + (++renderCounter);
-      pendingRenders.set(id, {
-        text: String(text),
-        owner,
-        repo,
-        branch,
-        baseDir: getBaseDir()
-      });
-      return `<div class="gp-mdp-body" data-gp-mdp-pending="${id}"><pre style="white-space:pre-wrap;">${escapeHtml(text)}</pre></div>`;
-    }
-    // 非强制模式：若有原始解析器则回退
     if (typeof state.originalParseMarkdown === "function") {
-      return state.originalParseMarkdown(text, owner, repo, branch);
+      try {
+        return state.originalParseMarkdown.call(
+          utils,
+          text,
+          owner,
+          repo,
+          branch
+        );
+      } catch (error) {
+        console.warn(
+          "[MarkdownRenderPlus] 原始 Markdown 解析器调用失败：",
+          error
+        );
+      }
     }
+
     return `<pre style="white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
   }
 
-  function patchOpenFileForBaseDir() {
-    if (!extension || state.patchedOpenFile || typeof extension.openFile !== "function") {
+  function patchOpenFile() {
+    if (
+      !extension ||
+      !state.originalOpenFile ||
+      state.patchedOpenFile
+    ) {
       return;
     }
-    const originalOpenFile = extension.openFile.bind(extension);
-    extension.openFile = async function patchedOpenFile(file) {
+
+    state.patchedOpenFile = async function patchedOpenFile(file) {
       try {
-        if (file && file.path) {
-          state.currentFilePath = String(file.path || "");
-          state.currentBaseDir = dirname(state.currentFilePath);
+        if (file?.path) {
+          setCurrentFilePath(file.path);
         }
-      } catch {}
-      return originalOpenFile(file);
+      } catch (error) {
+        console.warn(
+          "[MarkdownRenderPlus] 文件路径状态更新失败：",
+          error
+        );
+      }
+
+      return state.originalOpenFile.call(extension, file);
     };
-    state.patchedOpenFile = true;
+
+    extension.openFile = state.patchedOpenFile;
   }
 
-  patchOpenFileForBaseDir();
+  state.enhancedParseMarkdown =
+    function enhancedParseMarkdown(text, owner, repo, branch) {
+      if (!text) return "";
 
-  utils.parseMarkdown = function enhancedParseMarkdown(text, owner, repo, branch) {
-    if (!text) return "";
+      const safeOwner = owner || core?.currentOwner || "";
+      const safeRepo = repo || core?.currentRepo || "";
+      const safeBranch =
+        branch || core?.currentBranch || "main";
 
-    const safeOwner = owner || (core && core.currentOwner) || "";
-    const safeRepo = repo || (core && core.currentRepo) || "";
-    const safeBranch = branch || (core && core.currentBranch) || "main";
-    const baseDir = getBaseDir();
+      try {
+        return parseMarkdown(
+          text,
+          safeOwner,
+          safeRepo,
+          safeBranch
+        );
+      } catch (error) {
+        console.warn(
+          "[MarkdownRenderPlus] 内置 Markdown 解析失败：",
+          error
+        );
 
-    if (!state.ready && !state.loading && !state.failed) {
-      initMarkdownLibs();
-    }
-
-    if (!state.ready || !window.marked || !window.DOMPurify) {
-      const fallback = fallbackParse(text, safeOwner, safeRepo, safeBranch);
-      if (state.loading) {
-        return `
-          <div class="gp-mdp-loading-note">
-            Markdown 增强解析器正在加载中，加载完成后将自动渲染（强制覆盖模式）。
-          </div>
-          ${fallback}
-        `;
+        return fallbackParse(
+          text,
+          safeOwner,
+          safeRepo,
+          safeBranch
+        );
       }
-      return fallback;
-    }
+    };
 
-    try {
-      const cleanHtml = renderWithMarked(text, safeOwner, safeRepo, safeBranch, baseDir);
-      highlightLater();
-      return `
-        <div class="markdown-body gp-mdp-body">
-          ${cleanHtml}
-        </div>
-      `;
-    } catch (error) {
-      console.warn("[MarkdownRenderPlus] parse failed:", error);
-      return fallbackParse(text, safeOwner, safeRepo, safeBranch);
-    }
-  };
+  utils.parseMarkdown = state.enhancedParseMarkdown;
 
-  // 暴露给悬浮窗按钮调用
-  plugin.openCachePanel = function () {
-    ensurePanel();
-    const panel = document.querySelector(".gp-mdp-panel");
-    if (panel) panel.classList.add("gp-mdp-open");
-  };
+  patchOpenFile();
 
-  ensurePanel();
-  initMarkdownLibs();
-
-  console.log("[MarkdownRenderPlus] Plugin initialized with CDN cache + manual cache panel + force override + re-render.");
+  console.log(
+    "[MarkdownRenderPlus] 安全 Markdown 解析器已初始化。"
+  );
 };
 
 plugin.onHook = function (hookName, data) {
-  if (hookName === "file:open" && data && data.file && data.file.path) {
+  const state = this._mdpState;
+
+  if (
+    hookName === "file:open" &&
+    data?.file?.path &&
+    state
+  ) {
     try {
-      const path = String(data.file.path || "");
-      const i = path.lastIndexOf("/");
-      this._lastFilePath = path;
-      this._lastBaseDir = i >= 0 ? path.slice(0, i) : "";
-    } catch {}
+      const path = String(data.file.path)
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "")
+        .replace(/\/+$/, "");
+
+      const index = path.lastIndexOf("/");
+
+      state.currentFilePath = path;
+      state.currentBaseDir =
+        index >= 0 ? path.slice(0, index) : "";
+    } catch (error) {
+      console.warn(
+        "[MarkdownRenderPlus] file:open Hook 路径处理失败：",
+        error
+      );
+    }
   }
 
   if (
@@ -1127,19 +2086,68 @@ plugin.onHook = function (hookName, data) {
     hookName === "dir:load"
   ) {
     setTimeout(() => {
-      if (window.hljs) {
-        document.querySelectorAll(".gp-mdp-body pre code").forEach(block => {
-          if (block.dataset.gpMdpHighlighted === "1") return;
-          try {
-            window.hljs.highlightElement(block);
-            block.dataset.gpMdpHighlighted = "1";
-          } catch {}
+      const settings = {
+        ...plugin.settings,
+        ...(this.settings || {})
+      };
+
+      document
+        .querySelectorAll(".gp-mdp-body a[href]")
+        .forEach(link => {
+          if (settings.openLinksInNewTab) {
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+          } else {
+            link.removeAttribute("target");
+            link.removeAttribute("rel");
+          }
         });
-      }
-      document.querySelectorAll(".gp-mdp-body a[href]").forEach(a => {
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-      });
-    }, 80);
+    }, 50);
   }
+};
+
+plugin.destroy = function () {
+  const state = this._mdpState;
+
+  if (!state || state.disposed) {
+    return;
+  }
+
+  state.disposed = true;
+
+  try {
+    if (
+      state.utils?.parseMarkdown ===
+      state.enhancedParseMarkdown
+    ) {
+      state.utils.parseMarkdown =
+        state.originalParseMarkdown;
+    }
+  } catch (error) {
+    console.warn(
+      "[MarkdownRenderPlus] 恢复 parseMarkdown 失败：",
+      error
+    );
+  }
+
+  try {
+    if (
+      state.extension &&
+      state.originalOpenFile &&
+      state.extension.openFile === state.patchedOpenFile
+    ) {
+      state.extension.openFile = state.originalOpenFile;
+    }
+  } catch (error) {
+    console.warn(
+      "[MarkdownRenderPlus] 恢复 openFile 失败：",
+      error
+    );
+  }
+
+  this._mdpState = null;
+
+  console.log(
+    "[MarkdownRenderPlus] 插件已卸载，原始方法已恢复。"
+  );
 };
