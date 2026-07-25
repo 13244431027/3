@@ -1,8 +1,8 @@
 plugin.id = "github-oauth-login";
 plugin.name = "GitHub 登录";
 plugin.version = "1.2.0";
-plugin.description = "通过 OAuth 代理弹窗登录 GitHub，自动填充 Token，适配域名 oauth.13244431027.dpdns.org";
-plugin.tags = ["认证", "OAuth", "Token", "登录"];
+plugin.description = "通过 OAuth 代理弹窗登录 GitHub，自动填充 Token，域名 oauth.13244431027.dpdns.org";
+plugin.tags = ["认证", "OAuth登录"];
 
 plugin.style = `
 .ghlogin-btn{
