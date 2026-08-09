@@ -204,11 +204,23 @@ class myextend {
     }
 
     getWorkspace() {
-        if (window.Blockly?.getMainWorkspace) {
-            return window.Blockly.getMainWorkspace();
+        const Blockly = window.Blockly;
+        if (!Blockly) {
+            return null;
         }
 
-        return null;
+        let workspace = Blockly.getMainWorkspace?.() || null;
+
+        // flyout / mutator 的工作区要回到它的宿主主工作区
+        while (workspace && workspace.isFlyout && workspace.targetWorkspace) {
+            workspace = workspace.targetWorkspace;
+        }
+
+        if (workspace && workspace.isMutator && workspace.options?.parentWorkspace) {
+            workspace = workspace.options.parentWorkspace;
+        }
+
+        return workspace;
     }
 
     getCommentBlocks() {
@@ -661,25 +673,73 @@ class myextend {
 
         document.getElementById(this.searchDialogId)?.remove();
 
-        if (typeof vm.setEditingTarget === "function") {
+        const needSwitch = vm.editingTarget?.id !== result.targetId;
+
+        if (needSwitch && typeof vm.setEditingTarget === "function") {
             vm.setEditingTarget(result.targetId);
+            // 立即刷新一次，避免等待 redux 的下一帧
+            vm.emitWorkspaceUpdate?.();
         }
 
-        setTimeout(() => {
+        const deadline = Date.now() + 4000;
+
+        const tryFocus = () => {
             const workspace = this.getWorkspace();
-            if (!workspace) {
+            const block = workspace?.getBlockById?.(result.blockId);
+
+            // 目标未切换完成，或积木还没被渲染出来，继续等
+            if (!workspace || !block || vm.editingTarget?.id !== result.targetId) {
+                if (Date.now() < deadline) {
+                    requestAnimationFrame(tryFocus);
+                }
                 return;
             }
 
-            const block = workspace.getBlockById(result.blockId);
-            if (!block) {
-                return;
+            // 展开所有折叠的父级，否则积木没有可见坐标
+            let parent = block.getParent?.();
+            while (parent) {
+                if (parent.isCollapsed?.()) {
+                    parent.setCollapsed(false);
+                }
+                parent = parent.getParent?.();
             }
 
-            workspace.highlightBlock?.(result.blockId);
-            block.select?.();
-            workspace.centerOnBlock?.(result.blockId);
-        }, 180);
+            // 再等一帧，让工作区重建后的布局稳定下来
+            requestAnimationFrame(() => {
+                const target = this.getWorkspace()?.getBlockById?.(result.blockId);
+                if (!target) {
+                    return;
+                }
+
+                const ws = target.workspace;
+
+                if (typeof ws.centerOnBlock === "function") {
+                    ws.centerOnBlock(result.blockId);
+                } else {
+                    this.scrollBlockIntoView(ws, target);
+                }
+
+                target.select?.();
+                ws.glowBlock?.(result.blockId, true);
+                setTimeout(() => ws.glowBlock?.(result.blockId, false), 1600);
+            });
+        };
+
+        requestAnimationFrame(tryFocus);
+    }
+
+    scrollBlockIntoView(workspace, block) {
+        const metrics = workspace.getMetrics?.();
+        const position = block.getRelativeToSurfaceXY?.();
+        if (!metrics || !position) {
+            return;
+        }
+
+        const scale = workspace.scale || 1;
+        const x = position.x * scale - metrics.viewWidth / 2;
+        const y = position.y * scale - metrics.viewHeight / 2;
+
+        workspace.scrollbar?.set(x, y);
     }
 }
 
