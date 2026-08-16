@@ -4,4 +4,4 @@
 原理：基于 [@imgly/background-removal](https://github.com/imgly/background-removal-js)  的 isnet_fp16 模型，在浏览器本地运行，去除背景。
 
 积木预览：
-![积木](/图片/1.png)
+![积木](.../图片/1.png)
