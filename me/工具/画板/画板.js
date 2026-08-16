@@ -1,4 +1,3 @@
-
 (function (Scratch) {
   "use strict";
 
@@ -13,8 +12,10 @@
   const CDN = "https://unpkg.com";
   const ASSET_PATH = CDN + "/@excalidraw/excalidraw@" + EXCALIDRAW_VERSION + "/dist/";
 
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const XLINK_NS = "http://www.w3.org/1999/xlink";
+
   // ------------------------------------------------------------------ language
-  // Scratch / Gandi locale -> Excalidraw langCode
   const LANG_MAP = {
     en: "en",
     "zh-cn": "zh-CN",
@@ -149,9 +150,10 @@
     "  function addImage(d){",
     "    var L=window.ExcalidrawLib;",
     "    return measure(d.dataURL).then(function(dim){",
-    "      var maxSide=Math.max(dim.w,dim.h);",
+    "      var w0=d.width||dim.w, h0=d.height||dim.h;",
+    "      var maxSide=Math.max(w0,h0);",
     "      var k=maxSide>600?600/maxSide:1;",
-    "      var w=Math.round(dim.w*k), h=Math.round(dim.h*k);",
+    "      var w=Math.round(w0*k), h=Math.round(h0*k);",
     "      var fileId=('scratch'+Date.now().toString(36)+Math.random().toString(36).slice(2)).slice(0,40);",
     "      api.addFiles([{id:fileId,mimeType:d.mimeType||'image/png',dataURL:d.dataURL,created:Date.now()}]);",
     "      var view=api.getAppState();",
@@ -210,7 +212,6 @@
       this.pending = new Map();
       this.nextId = 1;
       this.mode = "embed";
-      // embed rect uses stage coordinates, float rect uses page pixels
       this.embedRect = { x: 0, y: 0, width: 440, height: 320 };
       this.floatRect = { x: 0, y: 0, width: 560, height: 420, placed: false };
       this.langMode = "auto";
@@ -267,7 +268,7 @@
       this.handle = document.createElement("div");
       this.handle.style.cssText =
         "position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;" +
-        "background:linear-gradient(135deg,transparent 45%,#6965db 45%,#6965db 100%);display:none;";
+        "background:linear-gradient(135deg,transparent 45%,#6965db 100%);display:none;";
 
       this.wrapper.appendChild(this.header);
       this.wrapper.appendChild(this.iframe);
@@ -496,7 +497,39 @@
     vm.on("LOCALE_CHANGED", () => overlay.syncLang());
   }
 
-  // ------------------------------------------------------------------ helpers
+  // ------------------------------------------------------------ image helpers
+  function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.decoding = "sync";
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("image decode failed"));
+      img.src = src;
+    });
+  }
+
+  function dataURIToText(uri) {
+    const comma = String(uri).indexOf(",");
+    if (comma < 0) return "";
+    const meta = uri.slice(0, comma);
+    const body = uri.slice(comma + 1);
+    if (/;base64/i.test(meta)) {
+      try {
+        const raw = atob(body);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+      } catch (e) {
+        return "";
+      }
+    }
+    try {
+      return decodeURIComponent(body);
+    } catch (e) {
+      return body;
+    }
+  }
+
   function svgSize(svgText) {
     let width = 0;
     let height = 0;
@@ -518,6 +551,180 @@
     return { width: width || 300, height: height || 300 };
   }
 
+  const isSvgDataURI = (uri) => /^data:image\/svg\+xml[;,]/i.test(String(uri));
+
+  // Rasterize any image data URI (including SVG) to a self-contained PNG data URI.
+  async function rasterizeToPNG(dataURL, options) {
+    const opts = options || {};
+    const scale = Math.max(0.1, opts.scale || 1);
+    const maxSide = opts.maxSide || 4096;
+
+    let hintW = opts.width || 0;
+    let hintH = opts.height || 0;
+    if ((!hintW || !hintH) && isSvgDataURI(dataURL)) {
+      const size = svgSize(dataURIToText(dataURL));
+      hintW = hintW || size.width;
+      hintH = hintH || size.height;
+    }
+
+    const img = await loadImageElement(dataURL);
+    let w = img.naturalWidth || img.width || hintW || 300;
+    let h = img.naturalHeight || img.height || hintH || 300;
+    // Firefox reports 0 for SVG without intrinsic size.
+    if (!img.naturalWidth && hintW) w = hintW;
+    if (!img.naturalHeight && hintH) h = hintH;
+
+    let outW = Math.max(1, Math.round(w * scale));
+    let outH = Math.max(1, Math.round(h * scale));
+    const biggest = Math.max(outW, outH);
+    if (biggest > maxSide) {
+      const k = maxSide / biggest;
+      outW = Math.max(1, Math.round(outW * k));
+      outH = Math.max(1, Math.round(outH * k));
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, outW, outH);
+    return { dataURL: canvas.toDataURL("image/png"), width: w, height: h };
+  }
+
+  // ------------------------------------------------- flatten exported SVG tree
+  // Excalidraw writes image elements as <defs><symbol><image href=.../></symbol></defs>
+  // plus <use href="#id">. scratch-svg-renderer and Gandi thumbnails do not follow
+  // that indirection, and SVG-in-SVG data URIs do not render inside <img>.
+  // So: expand every <use> into a real <image>, dual-write href/xlink:href, and
+  // rasterize nested SVG payloads into PNG.
+  async function flattenExportedSVG(svgText) {
+    const text = String(svgText || "");
+    if (!/<svg[\s>]/i.test(text)) return text;
+
+    let doc;
+    try {
+      doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    } catch (e) {
+      return text;
+    }
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() === "parsererror") return text;
+
+    root.setAttribute("xmlns", SVG_NS);
+    root.setAttribute("xmlns:xlink", XLINK_NS);
+
+    const readHref = (el) =>
+      el.getAttribute("href") || el.getAttributeNS(XLINK_NS, "href") || el.getAttribute("xlink:href") || "";
+
+    const cache = new Map();
+    const toPNG = async (href, w, h) => {
+      const key = href + "|" + Math.round(w || 0) + "x" + Math.round(h || 0);
+      if (cache.has(key)) return cache.get(key);
+      const promise = rasterizeToPNG(href, {
+        width: w,
+        height: h,
+        // Rasterize a bit above layout size so the costume stays crisp.
+        scale: 2,
+        maxSide: 4096
+      })
+        .then((r) => r.dataURL)
+        .catch(() => href);
+      cache.set(key, promise);
+      return promise;
+    };
+
+    const symbols = new Map();
+    Array.from(doc.getElementsByTagName("symbol")).forEach((sym) => {
+      if (sym.getAttribute("id")) symbols.set(sym.getAttribute("id"), sym);
+    });
+
+    const COPY_ATTRS = [
+      "x",
+      "y",
+      "width",
+      "height",
+      "transform",
+      "opacity",
+      "fill-opacity",
+      "clip-path",
+      "mask",
+      "filter",
+      "style",
+      "class"
+    ];
+
+    const uses = Array.from(doc.getElementsByTagName("use"));
+    for (const use of uses) {
+      const ref = readHref(use).trim();
+      if (!ref.startsWith("#")) continue;
+      const id = ref.slice(1);
+      const symbol = symbols.get(id) || doc.getElementById(id);
+      if (!symbol) continue;
+
+      const source = symbol.getElementsByTagName("image")[0];
+      if (!source) continue;
+
+      let href = readHref(source);
+      if (!href) continue;
+
+      let boxW = parseFloat(use.getAttribute("width")) || 0;
+      let boxH = parseFloat(use.getAttribute("height")) || 0;
+      if (!boxW || !boxH) {
+        const sw = parseFloat(source.getAttribute("width")) || 0;
+        const sh = parseFloat(source.getAttribute("height")) || 0;
+        boxW = boxW || sw || 0;
+        boxH = boxH || sh || 0;
+      }
+
+      if (isSvgDataURI(href)) {
+        href = await toPNG(href, boxW, boxH);
+      }
+
+      const image = doc.createElementNS(SVG_NS, "image");
+      COPY_ATTRS.forEach((name) => {
+        const value = use.getAttribute(name);
+        if (value !== null && value !== "") image.setAttribute(name, value);
+      });
+      if (boxW) image.setAttribute("width", String(boxW));
+      if (boxH) image.setAttribute("height", String(boxH));
+      // <symbol> without viewBox stretches its child to 100%/100%, so match that.
+      image.setAttribute("preserveAspectRatio", "none");
+      image.setAttribute("href", href);
+      image.setAttributeNS(XLINK_NS, "xlink:href", href);
+
+      if (use.parentNode) use.parentNode.replaceChild(image, use);
+    }
+
+    // Any image left in place: dual-write href and flatten nested SVG payloads.
+    const images = Array.from(doc.getElementsByTagName("image"));
+    for (const image of images) {
+      let href = readHref(image);
+      if (!href) continue;
+      if (isSvgDataURI(href)) {
+        href = await toPNG(
+          href,
+          parseFloat(image.getAttribute("width")) || 0,
+          parseFloat(image.getAttribute("height")) || 0
+        );
+      }
+      image.setAttribute("href", href);
+      image.setAttributeNS(XLINK_NS, "xlink:href", href);
+    }
+
+    // Drop the now-unused symbols, and any <defs> that became empty.
+    symbols.forEach((sym) => {
+      if (sym.parentNode) sym.parentNode.removeChild(sym);
+    });
+    Array.from(doc.getElementsByTagName("defs")).forEach((defs) => {
+      if (!defs.children.length && defs.parentNode) defs.parentNode.removeChild(defs);
+    });
+
+    return new XMLSerializer().serializeToString(doc);
+  }
+
+  // ---------------------------------------------------------------- costumes
   async function addBitmapCostume(dataURL, name, target) {
     if (!/^data:image\/png/.test(String(dataURL))) return;
     const response = await fetch(dataURL);
@@ -578,8 +785,30 @@
     const isSVG = String(costume.dataFormat).toLowerCase() === "svg";
     return {
       dataURL: asset.encodeDataURI(),
-      mimeType: isSVG ? "image/svg+xml" : "image/" + costume.dataFormat
+      mimeType: isSVG ? "image/svg+xml" : "image/" + costume.dataFormat,
+      isSVG
     };
+  }
+
+  // Excalidraw stores images as files; keeping SVG there would come back out as
+  // SVG-in-SVG on export, so convert to PNG at import time.
+  async function toBoardImage(image) {
+    if (!image || !image.dataURL) return null;
+    if (!isSvgDataURI(image.dataURL)) {
+      return { dataURL: image.dataURL, mimeType: image.mimeType || "image/png" };
+    }
+    try {
+      const raster = await rasterizeToPNG(image.dataURL, { scale: 2, maxSide: 2048 });
+      return {
+        dataURL: raster.dataURL,
+        mimeType: "image/png",
+        width: raster.width,
+        height: raster.height
+      };
+    } catch (e) {
+      console.warn("[Excalidraw] SVG rasterize failed", e);
+      return null;
+    }
   }
 
   function resolveTarget(name, util) {
@@ -849,20 +1078,22 @@
     }
 
     // ------------------------------------------------------- import / export
-    importCostume(args, util) {
+    async importCostume(args, util) {
       const target = resolveTarget(args.SPRITE, util);
       const costume = resolveCostume(target, args.COSTUME);
       if (!costume) return;
-      const image = costumeDataURL(costume);
+      const image = await toBoardImage(costumeDataURL(costume));
       if (!image) return;
-      return overlay.send("addImage", image).then(() => {});
+      await overlay.send("addImage", image);
     }
 
-    importDataURL(args) {
+    async importDataURL(args) {
       const url = Scratch.Cast.toString(args.URL);
       if (!/^data:image\//.test(url)) return;
       const cut = url.indexOf(";") >= 0 ? url.indexOf(";") : url.indexOf(",");
-      return overlay.send("addImage", { dataURL: url, mimeType: url.slice(5, cut) }).then(() => {});
+      const image = await toBoardImage({ dataURL: url, mimeType: url.slice(5, cut) });
+      if (!image) return;
+      await overlay.send("addImage", image);
     }
 
     async toCostume(args, util) {
@@ -873,17 +1104,23 @@
         return;
       }
       const svg = await overlay.send("exportSVG", { background });
-      if (svg) await addVectorCostume(svg, args.NAME, util.target);
+      if (!svg) return;
+      const flat = await flattenExportedSVG(svg);
+      await addVectorCostume(flat, args.NAME, util.target);
     }
 
-    exportImage(args) {
+    async exportImage(args) {
       const background = Scratch.Cast.toString(args.BG) === "white";
       if (Scratch.Cast.toString(args.FORMAT) === "svg") {
-        return overlay.send("exportSVG", { background }).then((v) => Scratch.Cast.toString(v));
+        const svg = await overlay.send("exportSVG", { background });
+        if (!svg) return "";
+        return Scratch.Cast.toString(await flattenExportedSVG(svg));
       }
-      return overlay
-        .send("exportPNG", { background, scale: Math.max(0.1, Scratch.Cast.toNumber(args.SCALE)) })
-        .then((v) => Scratch.Cast.toString(v));
+      const png = await overlay.send("exportPNG", {
+        background,
+        scale: Math.max(0.1, Scratch.Cast.toNumber(args.SCALE))
+      });
+      return Scratch.Cast.toString(png);
     }
   }
 
