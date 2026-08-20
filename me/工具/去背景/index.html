@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 去背景面板</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #ffffff;
+    overflow: hidden;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+  }
+  #status-bar {
+    font-size: 12px;
+    color: #555;
+    margin-bottom: 6px;
+    min-height: 16px;
+  }
+  #progress-wrap {
+    width: 100%;
+    height: 10px;
+    background: #eee;
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    display: none;
+  }
+  #progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4CAF50, #8BC34A);
+    transition: width 0.2s ease;
+  }
+  #main-area {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    min-height: 0;
+  }
+  #drop-zone {
+    flex: 1;
+    border: 2px dashed #999;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    cursor: pointer;
+    position: relative;
+    background: #fafafa;
+    transition: background 0.2s, border-color 0.2s;
+    overflow: hidden;
+  }
+  #drop-zone.dragover {
+    background: #e8f5e9;
+    border-color: #4CAF50;
+  }
+  #drop-zone img.preview-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  #drop-hint {
+    color: #888;
+    font-size: 13px;
+    text-align: center;
+    padding: 10px;
+    pointer-events: none;
+  }
+  #preview-area {
+    flex: 1;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      linear-gradient(45deg, #ccc 25%, transparent 25%),
+      linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%),
+      linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    overflow: hidden;
+    position: relative;
+  }
+  #preview-area img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  #preview-placeholder {
+    color: #999;
+    font-size: 13px;
+  }
+  #controls {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  button {
+    flex: 1;
+    min-width: 100px;
+    padding: 8px 10px;
+    font-size: 13px;
+    border: none;
+    border-radius: 6px;
+    background: #2196F3;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #1976D2; }
+  button:disabled {
+    background: #b0bec5;
+    cursor: not-allowed;
+  }
+  #btn-download { background: #4CAF50; }
+  #btn-download:hover { background: #388E3C; }
+  #btn-save-costume { background: #FF9800; }
+  #btn-save-costume:hover { background: #F57C00; }
+  #btn-preload { background: #9C27B0; }
+  #btn-preload:hover { background: #7B1FA2; }
+  #file-input { display: none; }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid #ddd;
+    border-top-color: #4CAF50;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="status-bar">等待操作...</div>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+  <div id="main-area">
+    <div id="drop-zone">
+      <div id="drop-hint">
+        点击选择本地图片<br>
+        或将图片拖拽到此处<br>
+        <small>支持 JPG / PNG / WebP</small>
+      </div>
+      <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+    </div>
+    <div id="preview-area">
+      <div id="preview-placeholder">去背景结果将显示在这里</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-preload">预加载模型</button>
+    <button id="btn-download" disabled>下载透明 PNG</button>
+    <button id="btn-save-costume" disabled>存为当前角色造型</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/browser.js"></script>
+<script src="bg-remove.js"></script>
+</body>
+</html>
