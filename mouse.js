@@ -6,11 +6,20 @@
     }
 
     const EXT_ID = 'advancedMouse';
+    const INSTANCE_KEY = Symbol.for('scratch.extensions.advancedMouse.instance');
     const runtime = Scratch.vm.runtime;
-    const canvas = runtime.renderer.canvas;
+    const canvas = runtime.renderer && runtime.renderer.canvas;
+    if (!canvas) {
+        throw new Error('未找到舞台 canvas');
+    }
 
     class AdvancedMouse {
         constructor() {
+            const previousInstance = runtime[INSTANCE_KEY];
+            if (previousInstance && typeof previousInstance.dispose === 'function') {
+                previousInstance.dispose();
+            }
+
             this.mouseX = 0;
             this.mouseY = 0;
             this.clientX = 0;
@@ -52,7 +61,11 @@
             this.dragTotalDistance = 0;
             this.dragLastClientX = 0;
             this.dragLastClientY = 0;
+            this.dragLastScratchX = 0;
+            this.dragLastScratchY = 0;
             this.dragLastTime = 0;
+            this.lastPointerDownClientX = null;
+            this.lastPointerDownClientY = null;
 
             // 拖拽框选角色相关
             this.dragSelectEnabled = false;
@@ -93,10 +106,47 @@
             this.tooltipBgColor = 'rgba(0, 0, 0, 0.75)';
             this.tooltipTextColor = '#ffffff';
             this.tooltipFontSize = 14;
+            this.touchTooltipTimer = null;
+
+            // 右键选择框相关（新增）
+            this.contextMenuCss = `
+                position: fixed;
+                z-index: 2147483647;
+                min-width: 180px;
+                padding: 6px 0;
+                background: rgba(255,255,255,0.97);
+                border: 1px solid rgba(0,0,0,0.12);
+                border-radius: 6px;
+                box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+                font: 14px "Segoe UI", sans-serif;
+                color: #222;
+                user-select: none;
+                pointer-events: auto;
+            `;
+            this.contextMenuVisible = false;
+            this.contextMenuElement = null;
+            this.contextMenuSelected = false;
+            this.contextMenuSelectedId = '';
+            this.contextMenuSelectedText = '';
+            this.contextMenuPlacementBounds = null;
+            this.contextSubmenus = new Set();
+            this._abortController = new AbortController();
+            this._disposed = false;
+            this._originalCanvasStyles = {
+                touchAction: canvas.style.touchAction,
+                userSelect: canvas.style.userSelect,
+                webkitUserSelect: canvas.style.webkitUserSelect,
+                webkitTouchCallout: canvas.style.webkitTouchCallout,
+                webkitTapHighlightColor: canvas.style.webkitTapHighlightColor,
+                cursor: canvas.style.cursor
+            };
+            this._originalCanvasTitle = canvas.getAttribute('title');
 
             this._createTooltip();
+            this._createContextMenu();
             this._createDragSelectBox();
             this._bindEvents();
+            runtime[INSTANCE_KEY] = this;
         }
 
         getInfo() {
@@ -152,7 +202,7 @@
                     { opcode: 'getDragCurrentY', blockType: Scratch.BlockType.REPORTER, text: '拖动当前 Y' },
                     { opcode: 'getDragEndX', blockType: Scratch.BlockType.REPORTER, text: '拖动终止 X' },
                     { opcode: 'getDragEndY', blockType: Scratch.BlockType.REPORTER, text: '拖动终止 Y' },
-                    { opcode: 'getDragSpeed', blockType: Scratch.BlockType.REPORTER, text: '拖拽速度 像素/秒' },
+                    { opcode: 'getDragSpeed', blockType: Scratch.BlockType.REPORTER, text: '拖拽速度 舞台单位/秒' },
                     { opcode: 'getDragDirection', blockType: Scratch.BlockType.REPORTER, text: '拖拽方向 角度' },
                     { opcode: 'getDragTotalDistance', blockType: Scratch.BlockType.REPORTER, text: '拖拽总距离' },
 
@@ -203,17 +253,17 @@
                     },
                     { opcode: 'getDoubleClickMaxInterval', blockType: Scratch.BlockType.REPORTER, text: '双击最大间隔' },
                     { opcode: 'isDoubleClick', blockType: Scratch.BlockType.BOOLEAN, text: '鼠标双击？' },
-                    { opcode: 'getLastDoubleClickButton', blockType: Scratch.BlockType.REPORTER, text: '最近双击按键' },
-                    { opcode: 'getLastDoubleClickX', blockType: Scratch.BlockType.REPORTER, text: '最近双击 X' },
-                    { opcode: 'getLastDoubleClickY', blockType: Scratch.BlockType.REPORTER, text: '最近双击 Y' },
+                    { opcode: 'getLastDoubleClickButton', blockType: Scratch.BlockType.REPORTER, text: '最后双击按键' },
+                    { opcode: 'getLastDoubleClickX', blockType: Scratch.BlockType.REPORTER, text: '最后双击 X' },
+                    { opcode: 'getLastDoubleClickY', blockType: Scratch.BlockType.REPORTER, text: '最后双击 Y' },
 
                     {
                         opcode: 'setMultiClickTimes',
                         blockType: Scratch.BlockType.COMMAND,
-                        text: '设置连击 [BUTTON] [TIMES] 次',
+                        text: '设置鼠标 [BUTTON] 连击次数为 [TIMES]',
                         arguments: {
                             BUTTON: { type: Scratch.ArgumentType.STRING, menu: 'buttonMenu', defaultValue: 'left' },
-                            TIMES: { type: Scratch.ArgumentType.NUMBER, defaultValue: 3 }
+                            TIMES: { type: Scratch.ArgumentType.NUMBER, defaultValue: 2 }
                         }
                     },
                     {
@@ -284,6 +334,34 @@
                         arguments: {
                             SIZE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 14 }
                         }
+                    },
+
+                    // ===== 新增选择框积木 =====
+                    {
+                        opcode: 'showContextMenu',
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: '显示选择框 [JSON]',
+                        arguments: {
+                            JSON: {
+                                type: Scratch.ArgumentType.STRING,
+                                defaultValue: '{"items":[{"id":"new","text":"新建","children":[{"id":"new_folder","text":"文件夹"},{"id":"new_text","text":"文本文档"}]},{"id":"view","text":"查看","children":[{"id":"view_large","text":"大图标","type":"radio","checked":true},{"id":"view_medium","text":"中等图标","type":"radio"}]}]}'
+                            }
+                        }
+                    },
+                    { opcode: 'hideContextMenu', blockType: Scratch.BlockType.COMMAND, text: '隐藏选择框' },
+                    { opcode: 'isContextMenuSelected', blockType: Scratch.BlockType.BOOLEAN, text: '已选择？' },
+                    { opcode: 'getSelectedContextMenuId', blockType: Scratch.BlockType.REPORTER, text: '已选择项 ID' },
+                    { opcode: 'getSelectedContextMenuText', blockType: Scratch.BlockType.REPORTER, text: '已选择项文本' },
+                    {
+                        opcode: 'setContextMenuCss',
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: '设置选择框 css [CSS]',
+                        arguments: {
+                            CSS: {
+                                type: Scratch.ArgumentType.STRING,
+                                defaultValue: 'position:fixed; z-index:2147483647; min-width:180px; background:rgba(255,255,255,0.97); border:1px solid rgba(0,0,0,0.12); border-radius:6px; box-shadow:0 8px 18px rgba(0,0,0,0.18);'
+                            }
+                        }
                     }
                 ],
                 menus: {
@@ -315,8 +393,12 @@
         }
 
         _bindEvents() {
-            // ============ 移动端触摸适配 ============
-            // 阻止浏览器默认触摸手势（滚动、缩放、长按菜单、点击高亮）
+            const signal = this._abortController.signal;
+            const listen = (target, type, handler, options = {}) => {
+                target.addEventListener(type, handler, { ...options, signal });
+            };
+
+            // ============ 移动端触摸适配 ============ 
             canvas.style.touchAction = 'none';
             canvas.style.userSelect = 'none';
             canvas.style.webkitUserSelect = 'none';
@@ -327,17 +409,14 @@
             this._lastClientX = 0;
             this._lastClientY = 0;
 
-            // 触摸/笔：只处理主指针（第一根手指）；鼠标永远处理
             const shouldHandleTouch = (e) => {
                 if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return true;
                 return this._activePointerId === null || e.pointerId === this._activePointerId;
             };
 
-            // ============ 指针移动 ============
-            canvas.addEventListener('pointermove', e => {
+            listen(canvas, 'pointermove', e => {
                 if (!shouldHandleTouch(e)) return;
 
-                // 触摸没有 movementX/Y，需要手动计算
                 if (e.pointerType === 'touch' || typeof e.movementX !== 'number') {
                     if (this._lastClientX !== 0 || this._lastClientY !== 0) {
                         this.movementX = e.clientX - this._lastClientX;
@@ -350,12 +429,12 @@
                     this.movementX = e.movementX || 0;
                     this.movementY = e.movementY || 0;
                 }
+
                 this._lastClientX = e.clientX;
                 this._lastClientY = e.clientY;
 
                 this.clientX = e.clientX;
                 this.clientY = e.clientY;
-
                 this._updateScratchMousePosition(e.clientX, e.clientY);
                 this._updateTooltipPosition(e.clientX, e.clientY);
 
@@ -371,9 +450,9 @@
 
                 if (this.possibleDrag || this.dragging) {
                     const now = Date.now();
-                    const dx = e.clientX - this.dragLastClientX;
-                    const dy = e.clientY - this.dragLastClientY;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const dx = this.mouseX - this.dragLastScratchX;
+                    const dy = this.mouseY - this.dragLastScratchY;
+                    const distance = Math.hypot(dx, dy);
                     const dt = now - this.dragLastTime;
 
                     if (dt > 0) {
@@ -381,9 +460,7 @@
                     }
 
                     if (distance > 0) {
-                        let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
-                        if (angle < 0) angle += 360;
-                        this.dragDirection = angle;
+                        this.dragDirection = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
                     }
 
                     if (this.dragging) {
@@ -392,6 +469,8 @@
 
                     this.dragLastClientX = e.clientX;
                     this.dragLastClientY = e.clientY;
+                    this.dragLastScratchX = this.mouseX;
+                    this.dragLastScratchY = this.mouseY;
                     this.dragLastTime = now;
                 }
 
@@ -407,39 +486,52 @@
                 }
             });
 
-            // ============ 指针进入 / 离开 ============
-            canvas.addEventListener('pointerenter', e => {
+            listen(canvas, 'pointerenter', e => {
                 this.inside = true;
                 this._lastClientX = e.clientX;
                 this._lastClientY = e.clientY;
+
                 if (this.tooltipVisible && this.tooltipElement && this.tooltipText !== '') {
                     this.tooltipElement.style.display = 'block';
                 }
             });
 
-            canvas.addEventListener('pointerleave', e => {
-                // 触摸拖动过程中，忽略 pointerleave（松手时由 pointerup 统一处理）
+            listen(canvas, 'pointerleave', e => {
                 if (e.pointerType !== 'mouse' && this._activePointerId !== null) return;
                 this.inside = false;
                 if (this.tooltipElement) this.tooltipElement.style.display = 'none';
                 if (this.dragSelectElement) this.dragSelectElement.style.display = 'none';
             });
 
-            // ============ 指针按下（画布上，负责拖动逻辑） ============
-            canvas.addEventListener('pointerdown', e => {
-                // 触摸 / 笔：记录主指针并捕获，保证滑出画布也能追踪
+            listen(canvas, 'pointerdown', e => {
                 if (e.pointerType !== 'mouse') {
                     if (this._activePointerId === null) {
                         this._activePointerId = e.pointerId;
                         try {
                             if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
-                        } catch (err) { /* 忽略 */ }
+                        } catch (err) { /* ignore */ }
                     } else if (e.pointerId !== this._activePointerId) {
-                        return; // 已有主指针，忽略额外的手指
+                        return;
                     }
                 }
 
+                this.clientX = e.clientX;
+                this.clientY = e.clientY;
+                this.lastPointerDownClientX = e.clientX;
+                this.lastPointerDownClientY = e.clientY;
                 this._updateScratchMousePosition(e.clientX, e.clientY);
+                this._updateTooltipPosition(e.clientX, e.clientY);
+
+                if (e.pointerType !== 'mouse' && this.tooltipVisible && this.tooltipText !== '') {
+                    if (this.touchTooltipTimer) {
+                        clearTimeout(this.touchTooltipTimer);
+                        this.touchTooltipTimer = null;
+                    }
+                    if (this.tooltipElement) this.tooltipElement.style.display = 'block';
+                }
+
+                this.buttons[e.button] = true;
+                this.buttonDownTime[e.button] = Date.now();
 
                 this.possibleDrag = true;
                 this.possibleDragButton = e.button;
@@ -462,6 +554,8 @@
 
                 this.dragLastClientX = e.clientX;
                 this.dragLastClientY = e.clientY;
+                this.dragLastScratchX = this.mouseX;
+                this.dragLastScratchY = this.mouseY;
                 this.dragLastTime = Date.now();
                 this._lastClientX = e.clientX;
                 this._lastClientY = e.clientY;
@@ -480,41 +574,41 @@
                 }
             });
 
-            // ============ 指针按下（全局，负责按键状态） ============
-            window.addEventListener('pointerdown', e => {
-                // 触摸：仅在画布上响应，避免干扰页面其它按钮
-                if (e.pointerType !== 'mouse' && e.target !== canvas) return;
-
-                this.buttons[e.button] = true;
-                if (!this.buttonDownTime[e.button]) {
-                    this.buttonDownTime[e.button] = Date.now();
+            listen(canvas, 'pointerup', e => {
+                if (e.pointerType !== 'mouse' && e.pointerId !== this._activePointerId) {
+                    return;
                 }
-            });
 
-            // ============ 指针抬起 ============
-            window.addEventListener('pointerup', e => {
-                // 触摸：只处理主指针
-                if (e.pointerType !== 'mouse' && e.pointerId !== this._activePointerId) return;
+                this.clientX = e.clientX;
+                this.clientY = e.clientY;
+                this._updateScratchMousePosition(e.clientX, e.clientY);
+                const wasDragging = this.dragging;
+
+                if (e.pointerType !== 'mouse' && e.pointerId === this._activePointerId) {
+                    try {
+                        if (canvas.releasePointerCapture) canvas.releasePointerCapture(e.pointerId);
+                    } catch (err) { /* ignore */ }
+                    this._activePointerId = null;
+                    this.inside = false;
+                    if (e.pointerType !== 'mouse' && this.tooltipVisible && this.tooltipText !== '') {
+                        if (this.touchTooltipTimer) clearTimeout(this.touchTooltipTimer);
+                        this.touchTooltipTimer = setTimeout(() => {
+                            if (this.tooltipElement) this.tooltipElement.style.display = 'none';
+                            this.touchTooltipTimer = null;
+                        }, 1200);
+                    } else if (this.tooltipElement) {
+                        this.tooltipElement.style.display = 'none';
+                    }
+                }
 
                 this.buttons[e.button] = false;
-                delete this.buttonDownTime[e.button];
+                this.buttonDownTime[e.button] = 0;
 
-                this._updateScratchMousePosition(e.clientX, e.clientY);
-
-                let endedDrag = false;
-
-                if (this.dragging && e.button === this.dragButton) {
-                    this.dragging = false;
-                    this.possibleDrag = false;
-                    endedDrag = true;
-
+                if (this.possibleDrag || this.dragging) {
                     this.dragEndX = this.mouseX;
                     this.dragEndY = this.mouseY;
-                }
-
-                if (e.button === this.possibleDragButton) {
+                    this.dragging = false;
                     this.possibleDrag = false;
-                    this.possibleDragButton = -1;
                 }
 
                 const onCanvas = e.target === canvas || e.pointerType !== 'mouse';
@@ -529,26 +623,13 @@
                     }
                 }
 
-                if (!endedDrag && onCanvas) {
+                if (!wasDragging && onCanvas) {
                     this._handleCustomDoubleClick(e);
                     this._handleMultiClick(e);
                 }
-
-                // 释放指针捕获 & 触摸收尾
-                if (e.pointerType !== 'mouse' && e.pointerId === this._activePointerId) {
-                    try {
-                        if (canvas.releasePointerCapture) canvas.releasePointerCapture(e.pointerId);
-                    } catch (err) { /* 忽略 */ }
-
-                    this._activePointerId = null;
-                    // 触摸抬起后视为离开画布（移动端没有悬停）
-                    this.inside = false;
-                    if (this.tooltipElement) this.tooltipElement.style.display = 'none';
-                }
             });
 
-            // ============ 指针被系统取消（如来电、手势抢占） ============
-            window.addEventListener('pointercancel', e => {
+            listen(window, 'pointercancel', e => {
                 if (e.pointerType === 'mouse') return;
                 if (e.pointerId !== this._activePointerId) return;
 
@@ -561,19 +642,24 @@
                 this.dragSpeed = 0;
                 this.dragDirection = 0;
                 this.inside = false;
+                this.dragSelectedSprites = [];
+                this._resetClickState();
 
                 if (this.dragSelectElement) this.dragSelectElement.style.display = 'none';
                 if (this.tooltipElement) this.tooltipElement.style.display = 'none';
+                if (this.touchTooltipTimer) {
+                    clearTimeout(this.touchTooltipTimer);
+                    this.touchTooltipTimer = null;
+                }
 
                 try {
                     if (canvas.releasePointerCapture) canvas.releasePointerCapture(e.pointerId);
-                } catch (err) { /* 忽略 */ }
+                } catch (err) { /* ignore */ }
 
                 this._activePointerId = null;
             });
 
-            // ============ 窗口失焦（切换标签页 / 应用） ============
-            window.addEventListener('blur', () => {
+            listen(window, 'blur', () => {
                 this.buttons = {};
                 this.buttonDownTime = {};
                 this.dragging = false;
@@ -587,53 +673,113 @@
                 if (this.dragSelectElement) {
                     this.dragSelectElement.style.display = 'none';
                 }
-
-                this.doubleClicked = false;
-                if (this.doubleClickTimer) {
-                    clearTimeout(this.doubleClickTimer);
-                    this.doubleClickTimer = null;
+                if (this.tooltipElement) {
+                    this.tooltipElement.style.display = 'none';
+                }
+                if (this.touchTooltipTimer) {
+                    clearTimeout(this.touchTooltipTimer);
+                    this.touchTooltipTimer = null;
                 }
 
-                this.multiClickCount = {};
-                this.multiClickLastTime = {};
-                this.multiClickLastClientX = {};
-                this.multiClickLastClientY = {};
-                this.multiClicked = {};
-
-                for (const button in this.multiClickTimer) {
-                    if (this.multiClickTimer[button]) {
-                        clearTimeout(this.multiClickTimer[button]);
-                    }
-                }
-
-                this.multiClickTimer = {};
+                this._resetClickState();
             });
 
-            // ============ 滚轮 ============
-            canvas.addEventListener('wheel', e => {
+            listen(canvas, 'wheel', e => {
                 this.wheelX += e.deltaX;
                 this.wheelY += e.deltaY;
                 this.wheelZ += e.deltaZ;
+            });
 
-                if (this.preventContextMenu) {
-                    e.preventDefault();
-                }
-            }, { passive: false });
-
-            // ============ 右键菜单 ============
-            canvas.addEventListener('contextmenu', e => {
+            listen(canvas, 'contextmenu', e => {
                 if (this.preventContextMenu) {
                     e.preventDefault();
                 }
             });
 
-            // ============ 指针锁定状态变化 ============
-            document.addEventListener('pointerlockchange', () => {
+            listen(document, 'pointerlockchange', () => {
                 if (document.pointerLockElement !== canvas) {
                     this.movementX = 0;
                     this.movementY = 0;
                 }
             });
+
+            // 点击空白处关闭选择框
+            listen(document, 'pointerdown', e => {
+                if (!this.contextMenuVisible) return;
+                if (!this.contextMenuElement) return;
+
+                const target = e.target;
+                if (target && this._isContextMenuTarget(target)) return;
+
+                this.hideContextMenu();
+            }, { capture: true });
+
+            listen(window, 'beforeunload', () => this.dispose());
+        }
+
+        _resetClickState() {
+            this.doubleClicked = false;
+            this.lastClickTime = 0;
+            this.lastClickButton = -1;
+            this.lastClickClientX = 0;
+            this.lastClickClientY = 0;
+
+            if (this.doubleClickTimer) {
+                clearTimeout(this.doubleClickTimer);
+                this.doubleClickTimer = null;
+            }
+
+            for (const button in this.multiClickTimer) {
+                if (this.multiClickTimer[button]) {
+                    clearTimeout(this.multiClickTimer[button]);
+                }
+            }
+
+            this.multiClickCount = {};
+            this.multiClickLastTime = {};
+            this.multiClickLastClientX = {};
+            this.multiClickLastClientY = {};
+            this.multiClicked = {};
+            this.multiClickTimer = {};
+        }
+
+        dispose() {
+            if (this._disposed) return;
+            this._disposed = true;
+            this._abortController.abort();
+            this._resetClickState();
+            if (this.touchTooltipTimer) {
+                clearTimeout(this.touchTooltipTimer);
+                this.touchTooltipTimer = null;
+            }
+            this._clearContextSubmenus();
+            if (this._activePointerId !== null && canvas.releasePointerCapture) {
+                try {
+                    canvas.releasePointerCapture(this._activePointerId);
+                } catch (err) {
+                    // Pointer capture may already have been released by the browser.
+                }
+            }
+            this._activePointerId = null;
+            this.buttons = {};
+            this.buttonDownTime = {};
+            if (runtime[INSTANCE_KEY] === this) {
+                delete runtime[INSTANCE_KEY];
+            }
+
+            if (this.tooltipElement) this.tooltipElement.remove();
+            if (this.contextMenuElement) this.contextMenuElement.remove();
+            if (this.dragSelectElement) this.dragSelectElement.remove();
+
+            for (const [property, value] of Object.entries(this._originalCanvasStyles)) {
+                canvas.style[property] = value;
+            }
+
+            if (this._originalCanvasTitle === null) {
+                canvas.removeAttribute('title');
+            } else {
+                canvas.setAttribute('title', this._originalCanvasTitle);
+            }
         }
 
         _updateScratchMousePosition(clientX, clientY) {
@@ -790,9 +936,294 @@
             tooltip.style.transform = 'translate(12px, 12px)';
             tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.25)';
             tooltip.style.userSelect = 'none';
+            tooltip.style.webkitUserSelect = 'none';
+            tooltip.style.webkitTouchCallout = 'none';
 
             document.body.appendChild(tooltip);
             this.tooltipElement = tooltip;
+        }
+
+        _createContextMenu() {
+            const menu = document.createElement('div');
+            menu.className = 'advanced-mouse-context-menu';
+            menu.style.display = 'none';
+            menu.style.cssText = this.contextMenuCss + '; display: none;';
+            document.body.appendChild(menu);
+            this.contextMenuElement = menu;
+        }
+
+        _applyContextMenuCss() {
+            if (!this.contextMenuElement) return;
+
+            const display = this.contextMenuVisible ? 'block' : 'none';
+            this.contextMenuElement.style.cssText = this.contextMenuCss + '; display: ' + display + ';';
+            this.contextMenuElement.style.maxHeight = 'calc(100vh - 16px)';
+            this.contextMenuElement.style.maxHeight = 'calc(100dvh - 16px)';
+            this.contextMenuElement.style.overflowY = 'auto';
+            this.contextMenuElement.style.webkitOverflowScrolling = 'touch';
+            this.contextMenuElement.style.touchAction = 'pan-y';
+            this.contextMenuElement.style.webkitUserSelect = 'none';
+            this.contextMenuElement.style.webkitTouchCallout = 'none';
+        }
+
+        _clearContextSubmenus() {
+            for (const submenu of this.contextSubmenus) {
+                submenu.remove();
+            }
+            this.contextSubmenus.clear();
+        }
+
+        _isContextMenuTarget(target) {
+            if (this.contextMenuElement && this.contextMenuElement.contains(target)) {
+                return true;
+            }
+
+            for (const submenu of this.contextSubmenus) {
+                if (submenu.contains(target)) return true;
+            }
+
+            return false;
+        }
+
+        _hideContextSubmenusFromDepth(depth) {
+            for (const submenu of this.contextSubmenus) {
+                if (submenu._contextMenuDepth >= depth) {
+                    submenu.style.display = 'none';
+                }
+            }
+        }
+
+        _getContextSubmenuZIndex() {
+            if (!this.contextMenuElement) return '2147483647';
+
+            const rootZIndex = Number.parseInt(
+                window.getComputedStyle(this.contextMenuElement).zIndex,
+                10
+            );
+            if (!Number.isFinite(rootZIndex)) return '2147483647';
+
+            // The submenu is appended after the root menu, so equal z-index still paints above it.
+            return String(Math.min(2147483647, rootZIndex + 1));
+        }
+
+        _buildContextMenuItem(item, depth = 0) {
+            if (!item) {
+                return document.createElement('div');
+            }
+
+            if (item.type === 'separator') {
+                const sep = document.createElement('div');
+                sep.style.height = '1px';
+                sep.style.background = 'rgba(0,0,0,0.08)';
+                sep.style.margin = '6px 0';
+                sep.style.width = '100%';
+                return sep;
+            }
+
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '8px';
+            row.style.padding = '8px 12px';
+            row.style.cursor = 'pointer';
+            row.style.position = 'relative';
+            row.style.whiteSpace = 'nowrap';
+            row.style.fontSize = '14px';
+            row.style.lineHeight = '1.2';
+            row.style.color = '#222';
+            row.style.touchAction = 'manipulation';
+            row.style.webkitUserSelect = 'none';
+            row.style.webkitTouchCallout = 'none';
+
+            row.onmouseenter = () => {
+                row.style.background = 'rgba(76, 151, 255, 0.08)';
+            };
+            row.onmouseleave = () => {
+                row.style.background = 'transparent';
+            };
+            row.addEventListener('pointerdown', event => {
+                if (event.pointerType !== 'mouse') {
+                    row.style.background = 'rgba(76, 151, 255, 0.18)';
+                }
+            });
+            const clearPressedStyle = () => {
+                row.style.background = 'transparent';
+            };
+            row.addEventListener('pointerup', clearPressedStyle);
+            row.addEventListener('pointercancel', clearPressedStyle);
+
+            if (item.icon) {
+                const icon = document.createElement('img');
+                icon.src = item.icon;
+                icon.alt = '';
+                icon.style.width = '16px';
+                icon.style.height = '16px';
+                icon.style.flexShrink = '0';
+                icon.style.objectFit = 'contain';
+                row.appendChild(icon);
+            }
+
+            const label = document.createElement('span');
+            label.textContent = item.text || '';
+            label.style.flex = '1';
+            row.appendChild(label);
+
+            const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+            if (hasChildren) {
+                const arrow = document.createElement('span');
+                arrow.textContent = '▶';
+                arrow.style.fontSize = '10px';
+                arrow.style.opacity = '0.7';
+                arrow.style.marginLeft = '8px';
+                row.appendChild(arrow);
+
+                const submenu = document.createElement('div');
+                submenu.style.position = 'fixed';
+                submenu.style.left = '0px';
+                submenu.style.top = '0px';
+                submenu.style.display = 'none';
+                submenu.style.minWidth = '180px';
+                submenu.style.padding = '6px 0';
+                submenu.style.background = 'rgba(255,255,255,0.97)';
+                submenu.style.border = '1px solid rgba(0,0,0,0.12)';
+                submenu.style.borderRadius = '6px';
+                submenu.style.boxShadow = '0 8px 18px rgba(0,0,0,0.18)';
+                submenu.style.zIndex = this._getContextSubmenuZIndex();
+                submenu.style.maxHeight = 'calc(100vh - 16px)';
+                submenu.style.maxHeight = 'calc(100dvh - 16px)';
+                submenu.style.overflowY = 'auto';
+                submenu.style.webkitOverflowScrolling = 'touch';
+                submenu.style.touchAction = 'pan-y';
+                submenu.style.webkitUserSelect = 'none';
+                submenu.style.webkitTouchCallout = 'none';
+                submenu._contextMenuDepth = depth + 1;
+
+                this.contextSubmenus.add(submenu);
+                document.body.appendChild(submenu);
+
+                item.children.forEach(child => {
+                    submenu.appendChild(this._buildContextMenuItem(child, depth + 1));
+                });
+
+                row.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const showing = submenu.style.display === 'block';
+                    if (showing) {
+                        this._hideContextSubmenusFromDepth(submenu._contextMenuDepth);
+                    } else {
+                        this._hideContextSubmenusFromDepth(submenu._contextMenuDepth);
+                        submenu.style.display = 'block';
+                        this._positionContextSubmenu(row, submenu);
+                    }
+                });
+            } else {
+                row.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    this.contextMenuSelected = true;
+                    this.contextMenuSelectedId = item.id || item.text || '';
+                    this.contextMenuSelectedText = item.text || '';
+                    this.hideContextMenu();
+                });
+            }
+
+            if (item.type === 'radio') {
+                const mark = document.createElement('span');
+                mark.textContent = item.checked ? '●' : '○';
+                mark.style.fontSize = '12px';
+                mark.style.minWidth = '12px';
+                mark.style.textAlign = 'center';
+                mark.style.opacity = '0.9';
+                row.insertBefore(mark, label);
+
+            }
+
+            return row;
+        }
+
+        _renderContextMenu(data) {
+            if (!this.contextMenuElement) return;
+
+            this._clearContextSubmenus();
+            this.contextMenuElement.innerHTML = '';
+
+            const items = Array.isArray(data && data.items) ? data.items : [];
+            const container = document.createElement('div');
+
+            items.forEach(item => {
+                container.appendChild(this._buildContextMenuItem(item));
+            });
+
+            this.contextMenuElement.appendChild(container);
+        }
+
+        _getContextMenuBounds(anchorX, anchorY, menuWidth, menuHeight) {
+            const margin = 8;
+            const canvasRect = canvas.getBoundingClientRect();
+            const pointerInsideStage =
+                anchorX >= canvasRect.left &&
+                anchorX <= canvasRect.right &&
+                anchorY >= canvasRect.top &&
+                anchorY <= canvasRect.bottom;
+
+            if (
+                pointerInsideStage &&
+                canvasRect.width >= menuWidth + margin * 2 &&
+                canvasRect.height >= menuHeight + margin * 2
+            ) {
+                return {
+                    left: canvasRect.left,
+                    top: canvasRect.top,
+                    right: canvasRect.right,
+                    bottom: canvasRect.bottom
+                };
+            }
+
+            return {
+                left: 0,
+                top: 0,
+                right: window.innerWidth,
+                bottom: window.innerHeight
+            };
+        }
+
+        _positionContextSubmenu(row, submenu) {
+            let bounds = this.contextMenuPlacementBounds || {
+                left: 0,
+                top: 0,
+                right: window.innerWidth,
+                bottom: window.innerHeight
+            };
+            const margin = 8;
+            const gap = 4;
+            const rowRect = row.getBoundingClientRect();
+            const submenuRect = submenu.getBoundingClientRect();
+            const width = submenuRect.width;
+            const height = submenuRect.height;
+            if (width + margin * 2 > bounds.right - bounds.left ||
+                height + margin * 2 > bounds.bottom - bounds.top) {
+                bounds = {
+                    left: 0,
+                    top: 0,
+                    right: window.innerWidth,
+                    bottom: window.innerHeight
+                };
+            }
+            const roomRight = bounds.right - rowRect.right - gap - margin;
+            const roomLeft = rowRect.left - bounds.left - gap - margin;
+            const openRight = roomRight >= width || roomRight >= roomLeft;
+
+            let left = openRight
+                ? rowRect.right + gap
+                : rowRect.left - width - gap;
+            let top = rowRect.top;
+
+            const maxLeft = Math.max(bounds.left + margin, bounds.right - width - margin);
+            const maxTop = Math.max(bounds.top + margin, bounds.bottom - height - margin);
+            left = Math.min(maxLeft, Math.max(bounds.left + margin, left));
+            top = Math.min(maxTop, Math.max(bounds.top + margin, top));
+
+            submenu.style.left = `${left}px`;
+            submenu.style.top = `${top}px`;
         }
 
         _createDragSelectBox() {
@@ -905,6 +1336,103 @@
             this.tooltipElement.style.fontSize = this.tooltipFontSize + 'px';
         }
 
+        // ===== 新增：显示/隐藏/查询右键选择框 =====
+        showContextMenu(args) {
+            let data = { items: [] };
+
+            try {
+                let raw = args && args.JSON !== undefined ? args.JSON : args;
+                if (typeof raw === 'string') {
+                    raw = raw.trim() === '' ? { items: [] } : JSON.parse(raw);
+                }
+
+                if (Array.isArray(raw)) {
+                    data = { items: raw };
+                } else if (raw && Array.isArray(raw.items)) {
+                    data = raw;
+                } else if (raw !== undefined && raw !== null) {
+                    throw new TypeError('选择框数据必须是包含 items 数组的对象或数组');
+                }
+            } catch (err) {
+                console.warn('[高级鼠标] 选择框 JSON 无效，已显示空菜单。', err);
+                data = { items: [] };
+            }
+
+            this.contextMenuSelected = false;
+            this.contextMenuSelectedId = '';
+            this.contextMenuSelectedText = '';
+
+            if (!this.contextMenuElement) {
+                this._createContextMenu();
+            }
+
+            this._renderContextMenu(data);
+
+            this.contextMenuVisible = true;
+            this._applyContextMenuCss();
+            this.contextMenuElement.style.display = 'block';
+
+            const margin = 8;
+            const gap = 4;
+            const rect = this.contextMenuElement.getBoundingClientRect();
+            const anchorX = this.lastPointerDownClientX === null
+                ? this.clientX
+                : this.lastPointerDownClientX;
+            const anchorY = this.lastPointerDownClientY === null
+                ? this.clientY
+                : this.lastPointerDownClientY;
+            const bounds = this._getContextMenuBounds(anchorX, anchorY, rect.width, rect.height);
+            this.contextMenuPlacementBounds = bounds;
+
+            const roomRight = bounds.right - anchorX - gap - margin;
+            const roomLeft = anchorX - bounds.left - gap - margin;
+            const roomBelow = bounds.bottom - anchorY - gap - margin;
+            const roomAbove = anchorY - bounds.top - gap - margin;
+            const openRight = roomRight >= rect.width || roomRight >= roomLeft;
+            const openBelow = roomBelow >= rect.height || roomBelow >= roomAbove;
+
+            const desiredLeft = openRight
+                ? anchorX + gap
+                : anchorX - rect.width - gap;
+            const desiredTop = openBelow
+                ? anchorY + gap
+                : anchorY - rect.height - gap;
+            const maxLeft = Math.max(bounds.left + margin, bounds.right - rect.width - margin);
+            const maxTop = Math.max(bounds.top + margin, bounds.bottom - rect.height - margin);
+            const left = Math.min(maxLeft, Math.max(bounds.left + margin, desiredLeft));
+            const top = Math.min(maxTop, Math.max(bounds.top + margin, desiredTop));
+
+            this.contextMenuElement.style.left = `${left}px`;
+            this.contextMenuElement.style.top = `${top}px`;
+        }
+
+        hideContextMenu() {
+            this.contextMenuVisible = false;
+            if (this.contextMenuElement) {
+                this.contextMenuElement.style.display = 'none';
+            }
+            this._hideContextSubmenusFromDepth(1);
+        }
+
+        isContextMenuSelected() {
+            return this.contextMenuSelected;
+        }
+
+        getSelectedContextMenuId() {
+            return this.contextMenuSelectedId;
+        }
+
+        getSelectedContextMenuText() {
+            return this.contextMenuSelectedText;
+        }
+
+        setContextMenuCss(args) {
+            const css = String(args && args.CSS !== undefined ? args.CSS : this.contextMenuCss);
+            this.contextMenuCss = css || this.contextMenuCss;
+            this._applyContextMenuCss();
+        }
+
+        // ===== 原有接口 =====
         getMouseX() { return this.mouseX; }
         getMouseY() { return this.mouseY; }
         getClientX() { return this.clientX; }
@@ -1031,7 +1559,16 @@
 
         lockPointer() {
             if (canvas.requestPointerLock) {
-                canvas.requestPointerLock();
+                try {
+                    const request = canvas.requestPointerLock();
+                    if (request && typeof request.catch === 'function') {
+                        request.catch(err => {
+                            console.warn('[高级鼠标] 无法锁定鼠标指针。', err);
+                        });
+                    }
+                } catch (err) {
+                    console.warn('[高级鼠标] 无法锁定鼠标指针。', err);
+                }
             }
         }
 
@@ -1069,7 +1606,7 @@
                 return;
             }
 
-            url = url.replace(/"/g, '\\"');
+            url = url.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
             canvas.style.cursor = `url("${url}") 0 0, auto`;
         }
 
