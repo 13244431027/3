@@ -7506,12 +7506,6 @@ var Prism = (function (_self) {
     }
 
     if (!_.manual) {
-        // If the document state is "loading", then we'll use DOMContentLoaded.
-        // If the document state is "interactive" and the prism.js script is deferred, then we'll also use the
-        // DOMContentLoaded event because there might be some plugins or languages which have also been deferred and they
-        // might take longer one animation frame to execute which can create a race condition where only some plugins have
-        // been loaded when Prism.highlightAll() is executed, depending on how fast resources are loaded.
-        // See https://github.com/PrismJS/prism/issues/2102
         var readyState = document.readyState;
         if (readyState === 'loading' || readyState === 'interactive' && script && script.defer) {
             document.addEventListener('DOMContentLoaded', highlightAutomaticallyCallback);
@@ -7532,59 +7526,10 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = Prism;
 }
 
-// hack for components to work correctly in node.js
 if (typeof global !== 'undefined') {
     global.Prism = Prism;
 }
 
-// some additional documentation/types
-
-/**
- * The expansion of a simple `RegExp` literal to support additional properties.
- *
- * @typedef GrammarToken
- * @property {RegExp} pattern The regular expression of the token.
- * @property {boolean} [lookbehind=false] If `true`, then the first capturing group of `pattern` will (effectively)
- * behave as a lookbehind group meaning that the captured text will not be part of the matched text of the new token.
- * @property {boolean} [greedy=false] Whether the token is greedy.
- * @property {string|string[]} [alias] An optional alias or list of aliases.
- * @property {Grammar} [inside] The nested grammar of this token.
- *
- * The `inside` grammar will be used to tokenize the text value of each token of this kind.
- *
- * This can be used to make nested and even recursive language definitions.
- *
- * Note: This can cause infinite recursion. Be careful when you embed different languages or even the same language into
- * each another.
- * @global
- * @public
- */
-
-/**
- * @typedef Grammar
- * @type {Object<string, RegExp | GrammarToken | Array<RegExp | GrammarToken>>}
- * @property {Grammar} [rest] An optional grammar object that will be appended to this grammar.
- * @global
- * @public
- */
-
-/**
- * A function which will invoked after an element was successfully highlighted.
- *
- * @callback HighlightCallback
- * @param {Element} element The element successfully highlighted.
- * @returns {void}
- * @global
- * @public
- */
-
-/**
- * @callback HookCallback
- * @param {Object<string, any>} env The environment variables of the hook.
- * @returns {void}
- * @global
- * @public
- */
 
 Prism.languages.markup = {
     'comment': {
@@ -7596,7 +7541,6 @@ Prism.languages.markup = {
         greedy: true
     },
     'doctype': {
-        // https://www.w3.org/TR/xml/#NT-doctypedecl
         pattern: /<!DOCTYPE(?:[^>"'[\]]|"[^"]*"|'[^']*')+(?:\[(?:[^<"'\]]|"[^"]*"|'[^']*'|<(?!!--)|<!--(?:[^-]|-(?!->))*-->)*\]\s*)?>/i,
         greedy: true,
         inside: {
@@ -7604,7 +7548,7 @@ Prism.languages.markup = {
                 pattern: /(^[^\[]*\[)[\s\S]+(?=\]>$)/,
                 lookbehind: true,
                 greedy: true,
-                inside: null // see below
+                inside: null 
             },
             'string': {
                 pattern: /"[^"]*"|'[^']*'/,
@@ -10293,6 +10237,65 @@ class WitCatMarkDown {
       return null;
     };
 
+    this._refreshTimer = null;
+    this._autoObserver = null;
+    this._observedCanvas = null;
+
+    /**
+     * 画布尺寸变化时（含全屏/小屏切换）刷新所有 markdown 的缩放与位置
+     */
+    this._refreshLayout = () => {
+      const cv = this.canvas();
+      if (cv === null) return;
+      const scale = cv.getBoundingClientRect().width / this.runtime.stageWidth;
+      document.documentElement.style.setProperty('--witcat-markdown-scale', `scale(${scale})`);
+      this._recalcPositions();
+    };
+
+    this._scheduleRefresh = () => {
+      if (this._refreshTimer) clearTimeout(this._refreshTimer);
+      this._refreshTimer = setTimeout(this._refreshLayout, 80);
+    };
+
+    /**
+     * 用 ResizeObserver 监听画布，任何尺寸变化（含 CSS 实现的全屏切换）都会触发刷新
+     */
+    this._attachAutoObserver = () => {
+      const cv = this.canvas();
+      if (cv === null) return;
+      if (this._observedCanvas === cv && this._autoObserver) return;
+      if (this._autoObserver) this._autoObserver.disconnect();
+      this._autoObserver = new ResizeObserver(() => this._scheduleRefresh());
+      this._autoObserver.observe(cv);
+      this._observedCanvas = cv;
+    };
+
+    window.addEventListener('resize', this._scheduleRefresh);
+    document.addEventListener('fullscreenchange', this._refreshLayout);
+    document.addEventListener('webkitfullscreenchange', this._refreshLayout);
+
+    /**
+     * 轮询兜底：部分编辑器用 CSS transform 实现全屏，此时 ResizeObserver 与
+     * resize 事件都不会触发，通过比较画布实际渲染矩形来判定全屏/小屏切换。
+     */
+    this._lastLayoutKey = '';
+    this._pollTimer = setInterval(() => {
+      const cv = this.canvas();
+      if (cv === null) return;
+      this._attachAutoObserver();
+      const r = cv.getBoundingClientRect();
+      const key = `${Math.round(r.width)}x${Math.round(r.height)}@${Math.round(r.left)},${Math.round(r.top)}`;
+      if (key !== this._lastLayoutKey) {
+        this._lastLayoutKey = key;
+        this._refreshLayout();
+      }
+    }, 300);
+
+    if (typeof MutationObserver !== 'undefined' && document.body) {
+      this._domObserver = new MutationObserver(() => this._attachAutoObserver());
+      this._domObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    this._attachAutoObserver();
     /**
      * 所有输入框所在的父角色，目前设为 canvas 的父角色。
      * 获取不到返回 null
@@ -11576,6 +11579,30 @@ class WitCatMarkDown {
     return el instanceof HTMLDivElement ? el : null;
   }
 
+  _recalcPositions() {
+    const cv = this.canvas();
+    if (cv === null) return;
+    const parent = this.inputParent() || document.body;
+    const pRect = parent.getBoundingClientRect();
+    const cRect = cv.getBoundingClientRect();
+    const offsetX = cRect.left - pRect.left;
+    const offsetY = cRect.top - pRect.top;
+    const dispW = cRect.width || this.runtime.stageWidth;
+    const dispH = cRect.height || this.runtime.stageHeight;
+    const containers = document.querySelectorAll('.WitCatMarkDownOut');
+    for (const el of containers) {
+      const x = Number(el.dataset.mdX);
+      const y = Number(el.dataset.mdY);
+      const width = Number(el.dataset.mdWidth);
+      const height = Number(el.dataset.mdHeight);
+      if (isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height)) continue;
+      el.style.left = `${offsetX + (x / this.runtime.stageWidth) * dispW}px`;
+      el.style.top = `${offsetY + (y / this.runtime.stageHeight) * dispH}px`;
+      el.style.width = `${(width / this.runtime.stageWidth) * dispW}px`;
+      el.style.height = `${(height / this.runtime.stageHeight) * dispH}px`;
+    }
+  }
+
   /**
    * 创建文本框
    * @param {Object} args
@@ -11632,7 +11659,10 @@ class WitCatMarkDown {
 
     search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.text), { docId: String(args.id) })}</div>`;
     Prism.highlightAllUnder(search);
-
+    search.dataset.mdX = String(x);
+    search.dataset.mdY = String(y);
+    search.dataset.mdWidth = String(width);
+    search.dataset.mdHeight = String(height);
   }
 
   imgstyle(args) {
@@ -11655,6 +11685,15 @@ class WitCatMarkDown {
   set(args) {
     const search = this._getEl(args.id);
     if (search !== null) {
+      const cv = this.canvas();
+      const parent = this.inputParent() || document.body;
+      if (cv === null) return;
+      const pRect = parent.getBoundingClientRect();
+      const cRect = cv.getBoundingClientRect();
+      const offsetX = cRect.left - pRect.left;
+      const offsetY = cRect.top - pRect.top;
+      const dispW = cRect.width || this.runtime.stageWidth;
+      const dispH = cRect.height || this.runtime.stageHeight;
       const sstyle = search.style;
       let x;
       let y;
@@ -11663,21 +11702,25 @@ class WitCatMarkDown {
       switch (args.type) {
         case 'x':
           x = this._clamp(Number(args.text), 0, this.runtime.stageWidth);
-          sstyle.left = `${x}px`;
+          search.dataset.mdX = String(x);
+          sstyle.left = `${offsetX + (x / this.runtime.stageWidth) * dispW}px`;
           break;
         case 'y':
           y = this._clamp(Number(args.text), 0, this.runtime.stageHeight);
-          sstyle.top = `${y}px`;
+          search.dataset.mdY = String(y);
+          sstyle.top = `${offsetY + (y / this.runtime.stageHeight) * dispH}px`;
           break;
         case 'width':
-          x = parseFloat(sstyle.left);
+          x = parseFloat(search.dataset.mdX || '0');
           width = this._clamp(Number(args.text), 0, this.runtime.stageWidth - x);
-          sstyle.width = `${Number(width)}px`;
+          search.dataset.mdWidth = String(width);
+          sstyle.width = `${(width / this.runtime.stageWidth) * dispW}px`;
           break;
         case 'height':
-          y = parseFloat(sstyle.top);
+          y = parseFloat(search.dataset.mdY || '0');
           height = this._clamp(Number(args.text), 0, this.runtime.stageHeight - y);
-          sstyle.height = `${Number(height)}px`;
+          search.dataset.mdHeight = String(height);
+          sstyle.height = `${(height / this.runtime.stageHeight) * dispH}px`;
           break;
         case 'content':
           search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.text), { docId: String(args.id) })}</div>`;
@@ -11762,6 +11805,7 @@ class WitCatMarkDown {
           if (cv === null) return;
           const scale = cv.getBoundingClientRect().width / this.runtime.stageWidth;
           document.documentElement.style.setProperty('--witcat-markdown-scale', `scale(${scale})`);
+          this._recalcPositions();
         });
         this.resize.observe(this.canvas(), { box: 'content-box' });
       }
@@ -11816,7 +11860,7 @@ class WitCatMarkDown {
       xhr.open('GET', String(args.text), true); // Asynchronous GET method to load the font
       xhr.responseType = 'arraybuffer'; // Change the asynchronous fetch type to arraybuffer binary type
       xhr.onload = function () {
-        document.fonts.add(new FontFace(String(args.name), this.response)); // Add the font object to the page
+        document.fonts.add(new FontFace(String(args.name), this.response)); 
       };
       xhr.send();
     } else {
@@ -11827,7 +11871,6 @@ class WitCatMarkDown {
   click(args) {
     let out = '';
     if (markdownmousedown.target) {
-      // getElementsByClassName 返回 HTMLCollection，没有 forEach，需要先转成数组
       const containers = Array.from(document.getElementsByClassName('WitCatMarkDown'));
       for (const e of containers) {
         if (!e.contains(markdownmousedown.target)) {
@@ -11862,7 +11905,6 @@ class WitCatMarkDown {
   touchs(args) {
     let out = '';
     if (touchEvent.target) {
-      // getElementsByClassName 返回 HTMLCollection，没有 forEach，需要先转成数组
       const containers = Array.from(document.getElementsByClassName('WitCatMarkDown'));
       for (const e of containers) {
         if (!e.contains(touchEvent.target)) {
@@ -11903,7 +11945,6 @@ class WitCatMarkDown {
           return Boolean(touchEvent.target) && touchEvent.target === ele;
         }
       } else {
-        // getElementsByTagName 返回 HTMLCollection，没有 some，需要先转成数组
         const ele = Array.from(search.getElementsByTagName(String(args.type)));
         return Boolean(touchEvent.target) && ele.some((e) => e === touchEvent.target);
       }
@@ -11924,10 +11965,6 @@ class WitCatMarkDown {
     }
   }
 
-  /**
-   * 设置代码框高亮
-   * @param {object} args
-   */
   code(args) {
     const search = this._getEl(args.id);
     if (search !== null) {
@@ -12015,10 +12052,6 @@ class WitCatMarkDown {
     }
   }
 
-  /**
-   * 获取代码返回值
-   * @param {Object} args
-   */
   get(args) {
     if (this.canvas() === null || this.inputParent() === null) {
       return '';
@@ -12030,11 +12063,6 @@ class WitCatMarkDown {
     return '';
   }
 
-  /**
-   * 删除文本框
-   * @param {Object} args
-   * @returns
-   */
   delete(args) {
     if (this.inputParent() === null) {
       return;
