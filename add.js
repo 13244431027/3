@@ -1,12 +1,6 @@
 // PluginSystem TurboWarp extension.
 //
-// 插件系统：在项目中开放「插件插槽」（C 型块），用户上传插件 sb3 后，
-// 扩展会把插件 sb3 中「当插件 [ID] 被加载」帽子块下的代码复制进对应 ID 的插槽，
-// 从而在不修改原项目积木的前提下扩展项目行为。
-//
-// 该扩展必须运行在无沙盒（unsandboxed）模式下，因为它需要直接读写 Scratch VM 的积木。
-/* eslint-env browser */
-/* global Scratch */
+
 (function (Scratch) {
     if (!Scratch.extensions.unsandboxed) {
         throw new Error('插件系统扩展必须以无沙盒（unsandboxed）模式运行');
