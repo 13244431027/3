@@ -11,7 +11,7 @@
       // Extension-internal buffers. Read them back with the reporter blocks.
       this.answer = '';
       this.thinking = '';
-      this.thinkMode = 'auto';      // 'auto' | 'on' | 'off'
+      this.thinkMode = 'auto';      // 'auto' 自动| 'on'开 | 'off'关
       this.context = [];            // array of { role, content, [reasoning_content] }
       this.contextNote = '空';
       this.lastPrompt = '';
@@ -29,8 +29,10 @@
         color3: '#1b4456',
         blocks: [
           { opcode: 'setBase', blockType: Scratch.BlockType.COMMAND, text: '设置 AI 服务地址 [BASE]',
-            arguments: { BASE: { type: Scratch.ArgumentType.STRING, defaultValue: DEFAULT_BASE } } },
-          { opcode: 'getBase', blockType: Scratch.BlockType.REPORTER, text: 'AI 服务地址' },
+            arguments: { BASE: { type: Scratch.ArgumentType.STRING, defaultValue: DEFAULT_BASE } },
+    hideFromPalette: true  },
+          { opcode: 'getBase', blockType: Scratch.BlockType.REPORTER, text: 'AI 服务地址' ,
+    hideFromPalette: true },
           { opcode: 'setThink', blockType: Scratch.BlockType.COMMAND, text: '设置深度思考 [MODE]',
             arguments: { MODE: { type: Scratch.ArgumentType.STRING, menu: 'THINK_MODES' } } },
           { opcode: 'getThink', blockType: Scratch.BlockType.REPORTER, text: '深度思考设置' },
@@ -73,15 +75,15 @@
               PROMPT: { type: Scratch.ArgumentType.STRING, defaultValue: '' },
             } },
           '---',
-          { opcode: 'complete', blockType: Scratch.BlockType.COMMAND, text: 'AI 文本补全：前文 [PROMPT]',
-            arguments: { PROMPT: { type: Scratch.ArgumentType.STRING, defaultValue: '从前有座山，' } } },
-          { opcode: 'completeDelayed', blockType: Scratch.BlockType.COMMAND, text: 'AI 文本补全：前文 [PROMPT]，字符间隔 [DELAY] ms，[MODE]',
+          { opcode: 'complete', blockType: Scratch.BlockType.COMMAND, text: '[测试勿用]文本补全：前文 [PROMPT]',
+            arguments: { PROMPT: { type: Scratch.ArgumentType.STRING, defaultValue: '很好，用户问我1+1为什么等于2' } } },
+          { opcode: 'completeDelayed', blockType: Scratch.BlockType.COMMAND, text: '[测试勿用]文本补全：前文 [PROMPT]，字符间隔 [DELAY] ms，[MODE]',
             arguments: {
-              PROMPT: { type: Scratch.ArgumentType.STRING, defaultValue: '从前有座山，' },
+              PROMPT: { type: Scratch.ArgumentType.STRING, defaultValue: '好的，用户让我写一个故事' },
               DELAY: { type: Scratch.ArgumentType.NUMBER, defaultValue: 15 },
               MODE: { type: Scratch.ArgumentType.STRING, menu: 'MODES' },
             } },
-          { opcode: 'completeContext', blockType: Scratch.BlockType.COMMAND, text: 'AI 文本补全：用上下文作前文，续写 [PROMPT]',
+          { opcode: 'completeContext', blockType: Scratch.BlockType.COMMAND, text: '[测试勿用]文本补全：用上下文作前文，续写 [PROMPT]',
             arguments: { PROMPT: { type: Scratch.ArgumentType.STRING, defaultValue: '' } } },
           '---',
           { opcode: 'getOutput', blockType: Scratch.BlockType.REPORTER, text: 'AI 输出内容' },
